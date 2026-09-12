@@ -84,7 +84,10 @@ export function RevenueBoard({
 
   async function changeStage(id: string, next: string) {
     const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.from("opportunities").update({ stage, updated_at: new Date().toISOString() }).eq("id", id);
+    const { error } = await supabase
+      .from("opportunities")
+      .update({ stage: next, updated_at: new Date().toISOString() })
+      .eq("id", id);
     if (error) {
       setMessage(error.message);
       return;
