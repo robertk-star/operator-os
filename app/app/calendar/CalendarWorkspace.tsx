@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type CalEvent = { id: string; title: string; starts_at: string; ends_at: string | null };
@@ -11,6 +11,7 @@ type Item = {
   start: string;
   end?: string | null;
   kind: "appointment" | "task";
+  source?: "google" | "workspace";
 };
 
 function keyFromDate(date: Date) {
@@ -42,20 +43,42 @@ export function CalendarWorkspace({
 }) {
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [eventList, setEventList] = useState(events);
+  const [googleItems, setGoogleItems] = useState<Item[]>([]);
+  const [googleEmail, setGoogleEmail] = useState("");
+  const [googleConnected, setGoogleConnected] = useState(false);
+  const [notice, setNotice] = useState("");
   const [selectedDay, setSelectedDay] = useState(() => keyFromDate(new Date()));
-  const [selected, setSelected] = useState<Item | null>(null);
   const [title, setTitle] = useState("");
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [message, setMessage] = useState("");
 
+  const days = useMemo(() => gridDays(month), [month]);
+
+  useEffect(() => {
+    const rangeStart = days[0].toISOString();
+    const rangeEnd = new Date(days[41]);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+    fetch(`/api/calendar/google?start=${encodeURIComponent(rangeStart)}&end=${encodeURIComponent(rangeEnd.toISOString())}`)
+      .then((response) => response.json())
+      .then((payload) => {
+        setGoogleConnected(Boolean(payload.connected));
+        setGoogleEmail(payload.email || "");
+        setGoogleItems(payload.items || []);
+        if (payload.error) setNotice(payload.error);
+        else setNotice("");
+      })
+      .catch(() => setNotice("Could not reach Google Calendar."));
+  }, [month.getFullYear(), month.getMonth()]);
+
   const items = useMemo<Item[]>(() => {
-    const appointments = eventList.map((event) => ({
+    const local = eventList.map((event) => ({
       id: event.id,
       title: event.title,
       start: event.starts_at,
       end: event.ends_at,
       kind: "appointment" as const,
+      source: "workspace" as const,
     }));
     const datedTasks = tasks
       .filter((task) => task.due_at)
@@ -64,14 +87,15 @@ export function CalendarWorkspace({
         title: task.title,
         start: task.due_at as string,
         kind: "task" as const,
+        source: "workspace" as const,
       }));
-    return [...appointments, ...datedTasks];
-  }, [eventList, tasks]);
+    return [...local, ...datedTasks, ...googleItems];
+  }, [eventList, tasks, googleItems]);
 
-  const days = useMemo(() => gridDays(month), [month]);
   const byDay = useMemo(() => {
     const map = new Map<string, Item[]>();
     for (const item of items) {
+      if (!item.start) continue;
       const key = keyFromDate(new Date(item.start));
       map.set(key, [...(map.get(key) || []), item]);
     }
@@ -79,7 +103,7 @@ export function CalendarWorkspace({
   }, [items]);
 
   const todayKey = keyFromDate(new Date());
-  const selectedItems = [...(byDay.get(selectedDay) || [])].sort((a, b) => a.start.localeCompare(b.start));
+  const selectedItems = [...(byDay.get(selectedDay) || [])].sort((a, b) => String(a.start).localeCompare(String(b.start)));
   const appointments = items.filter((item) => item.kind === "appointment").length;
   const datedTasks = items.filter((item) => item.kind === "task").length;
 
@@ -128,12 +152,17 @@ export function CalendarWorkspace({
             Calendar <span className="badge">Unified view</span>
           </p>
           <h2>Calendar</h2>
-          <p className="meta">Appointments and dated tasks in one month grid.</p>
+          <p className="meta">
+            {googleConnected
+              ? `Google Calendar connected${googleEmail ? ` as ${googleEmail}` : ""}.`
+              : "Add Gmail to load Google Calendar onto this grid."}
+          </p>
         </div>
         <button type="button" className="chip" onClick={() => showMonth(new Date())}>
           Today
         </button>
       </div>
+      {notice ? <p className="meta">{notice}</p> : null}
 
       <div className="count-row">
         <div className="card">
@@ -156,9 +185,7 @@ export function CalendarWorkspace({
             <button type="button" onClick={() => showMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>
               ‹
             </button>
-            <h3>
-              {month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-            </h3>
+            <h3>{month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</h3>
             <button type="button" onClick={() => showMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>
               ›
             </button>
@@ -182,7 +209,7 @@ export function CalendarWorkspace({
                 >
                   <span>{day.getDate()}</span>
                   {dayItems.slice(0, 3).map((item) => (
-                    <em key={item.id} className={item.kind} onClick={(e) => { e.stopPropagation(); setSelected(item); setSelectedDay(key); }}>
+                    <em key={item.id} className={item.kind}>
                       {item.title}
                     </em>
                   ))}
@@ -203,7 +230,8 @@ export function CalendarWorkspace({
                   <div>
                     <strong>{item.title}</strong>
                     <div className="meta">
-                      {item.kind} · {new Date(item.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                      {item.source === "google" ? "Google" : item.kind} ·{" "}
+                      {new Date(item.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                     </div>
                   </div>
                 </li>
@@ -211,7 +239,7 @@ export function CalendarWorkspace({
             </ul>
           </div>
           <form className="stack" onSubmit={addEvent}>
-            <p className="kicker">Add appointment</p>
+            <p className="kicker">Add workspace appointment</p>
             <label>
               Event
               <input value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -226,7 +254,6 @@ export function CalendarWorkspace({
             </label>
             <button type="submit">Add event</button>
           </form>
-          {selected ? <p className="meta">Selected: {selected.title}</p> : null}
           {message ? <p>{message}</p> : null}
         </aside>
       </div>
