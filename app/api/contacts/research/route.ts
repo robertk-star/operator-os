@@ -42,21 +42,9 @@ function guessIndustry(text: string) {
   return rules.find(([pattern]) => pattern.test(value))?.[1] || "";
 }
 
-function emailsIn(text: string) {
-  return [...new Set((text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map((item) => item.toLowerCase()))].slice(0, 8);
-}
-
-function linksIn(html: string, base: string) {
-  const found = new Set<string>();
-  const matches = html.matchAll(/href=["']([^"']+)["']/gi);
-  for (const match of matches) {
-    try {
-      const url = new URL(match[1], base);
-      const href = url.toString();
-      if (/linkedin\.com|facebook\.com|instagram\.com|youtube\.com|twitter\.com|x\.com/i.test(href)) found.add(href.split("?")[0]);
-    } catch {}
-  }
-  return [...found].slice(0, 8);
+function findAddress(text: string) {
+  const match = text.match(/\d{1,6}\s+[A-Za-z0-9.'\- ]{3,40},\s*[A-Za-z.'\- ]{2,30},\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?/);
+  return match?.[0] || "";
 }
 
 async function fetchPage(url: string) {
@@ -77,6 +65,12 @@ async function fetchPage(url: string) {
   }
 }
 
+function pageText(html: string) {
+  return decode(
+    html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")
+  );
+}
+
 export async function POST(request: Request) {
   const workspace = await getCurrentWorkspace();
   if (!workspace) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -84,7 +78,7 @@ export async function POST(request: Request) {
   const { contactId } = await request.json().catch(() => ({ contactId: "" }));
   const { data: contact } = await supabase
     .from("contacts")
-    .select("id, website, business_name, full_name, linkedin_url, email, industry, organizations(domain)")
+    .select("id, website, industry, street_address, city, state, postal_code, country, organizations(domain)")
     .eq("workspace_id", workspace.id)
     .eq("id", contactId)
     .maybeSingle();
@@ -95,32 +89,24 @@ export async function POST(request: Request) {
   if (!start) return NextResponse.json({ error: "This contact has no website to research." }, { status: 400 });
 
   const root = new URL(start);
-  const paths = [start, `${root.origin}/about`, `${root.origin}/about-us`, `${root.origin}/team`, `${root.origin}/company`];
-  const pages: string[] = [];
-  const emails = new Set<string>();
-  const socials = new Set<string>();
+  const paths = [start, `${root.origin}/about`, `${root.origin}/contact`, `${root.origin}/contact-us`];
   let title = "";
   let description = "";
+  let address = "";
+  let blob = "";
 
   for (const path of paths) {
     const html = await fetchPage(path);
     if (!html) continue;
-    pages.push(path);
     if (!title) title = decode((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").slice(0, 180));
     if (!description) description = decode((html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i)?.[1] || "").slice(0, 400));
-    emailsIn(html).forEach((item) => emails.add(item));
-    linksIn(html, path).forEach((item) => socials.add(item));
+    const text = pageText(html);
+    blob += ` ${text}`;
+    if (!address) address = findAddress(text);
   }
 
-  const industry = contact.industry || guessIndustry(`${title} ${description}`);
-  const notes = [
-    title ? `Title: ${title}` : "",
-    description ? `Description: ${description}` : "",
-    industry ? `Industry: ${industry}` : "",
-    pages.length ? `Pages read: ${pages.join(", ")}` : "No pages could be fetched.",
-    emails.size ? `Emails on site: ${[...emails].join(", ")}` : "No emails found on public pages.",
-    socials.size ? `Profiles: ${[...socials].join(", ")}` : "",
-  ]
+  const industry = contact.industry || guessIndustry(`${title} ${description} ${blob.slice(0, 2000)}`);
+  const notes = [description || title, industry ? `Industry: ${industry}` : "", address ? `Address: ${address}` : ""]
     .filter(Boolean)
     .join("\n");
 
@@ -129,13 +115,17 @@ export async function POST(request: Request) {
     researched_at: new Date().toISOString(),
   };
   if (industry) patch.industry = industry;
-  if (!contact.linkedin_url) {
-    const linkedin = [...socials].find((item) => item.includes("linkedin.com"));
-    if (linkedin) patch.linkedin_url = linkedin;
-  }
-  if (!contact.email) {
-    const publicEmail = [...emails].find((item) => !/noreply|no-reply|donotreply/i.test(item));
-    if (publicEmail) patch.email = publicEmail;
+  if (address && !contact.street_address) {
+    const parts = address.split(",").map((part) => part.trim());
+    patch.street_address = parts[0] || address;
+    if (parts[1]) patch.city = parts[1];
+    const stateZip = parts[2] || "";
+    const stateMatch = stateZip.match(/^([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (stateMatch) {
+      patch.state = stateMatch[1];
+      patch.postal_code = stateMatch[2];
+    }
+    if (!contact.country) patch.country = "United States";
   }
 
   const { error } = await supabase.from("contacts").update(patch).eq("id", contact.id);
