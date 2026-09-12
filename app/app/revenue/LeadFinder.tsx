@@ -22,6 +22,12 @@ function domainOf(url: string) {
   }
 }
 
+function websiteOf(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+}
+
 export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string; defaultQuery: string }) {
   const [query, setQuery] = useState(defaultQuery);
   const [items, setItems] = useState<Lead[]>([]);
@@ -63,6 +69,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
 
   async function persist(lead: Lead) {
     const supabase = createSupabaseBrowserClient();
+    const website = websiteOf(lead.url);
     const row: Record<string, unknown> = {
       workspace_id: workspaceId,
       name: lead.name,
@@ -76,11 +83,26 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
       orgError = retry.error;
     }
     if (orgError || !organization) throw new Error(orgError?.message || `Could not save ${lead.name}`);
-    const { data: contact, error: contactError } = await supabase
-      .from("contacts")
-      .insert({ workspace_id: workspaceId, organization_id: organization.id, full_name: lead.name, email: null })
-      .select("id")
-      .single();
+    const contactRow: Record<string, unknown> = {
+      workspace_id: workspaceId,
+      organization_id: organization.id,
+      full_name: lead.name,
+      business_name: lead.name,
+      website,
+      source: "apollo",
+      email_status: "missing",
+      status: "active",
+    };
+    let { data: contact, error: contactError } = await supabase.from("contacts").insert(contactRow).select("id").single();
+    if (contactError) {
+      const retry = await supabase
+        .from("contacts")
+        .insert({ workspace_id: workspaceId, organization_id: organization.id, full_name: lead.name, email: null })
+        .select("id")
+        .single();
+      contact = retry.data;
+      contactError = retry.error;
+    }
     if (contactError || !contact) throw new Error(contactError?.message || `Could not save contact for ${lead.name}`);
     const { error: oppError } = await supabase.from("opportunities").insert({
       workspace_id: workspaceId,
@@ -115,7 +137,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
   return (
     <div className="stack wide">
       <p className="meta">
-        Filters come from <Link href="/app/settings">Settings</Link>. Each Find or Next 100 uses 1 Apollo credit. Saving is free.
+        Filters come from <Link href="/app/settings">Settings</Link>. Each Find or Next 100 uses 1 Apollo credit. Saving is free and stores the website.
       </p>
       <form
         className="stack"
