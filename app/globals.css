@@ -63,8 +63,16 @@ button, input, select, textarea { font: inherit; }
   cursor: pointer;
   font-weight: 600;
 }
-.workspace { flex: 1; display: flex; min-width: 0; }
+.workspace { flex: 1; display: flex; min-width: 0; min-height: 100vh; }
 .main { flex: 1; padding: 28px 36px; min-width: 0; }
+.main.contacts-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+  padding-bottom: 16px;
+}
 .rail { width: 300px; border-left: 1px solid var(--line); padding: 24px 18px; background: #f7f9fa; }
 .card {
   background: white;
@@ -133,17 +141,33 @@ input, select, textarea.field, button {
 .day em.task { background: #fff8e4; color: #705a20; }
 .day-rail { min-width: 0; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.contacts-main { max-width: none; }
-.contacts-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
-.kpi-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; margin: 20px 0; }
+.contacts-desk {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.contacts-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-shrink: 0; }
+.kpi-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; margin: 20px 0; flex-shrink: 0; }
 .kpi {
   border: 1px solid var(--line); background: white; border-radius: 16px;
   text-align: left; min-height: 88px; cursor: pointer;
 }
 .kpi strong { display: block; font-size: 28px; }
 .kpi-dark { background: #17243f; color: white; border-color: #17243f; }
-.contacts-split { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; }
-.contacts-list { display: flex; flex-direction: column; gap: 8px; }
+.contacts-split {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+.contacts-list,
+.contact-record {
+  min-height: 0;
+  overflow: auto;
+}
+.contact-record { margin-bottom: 0; }
 .contact-row {
   border: 1px solid var(--line); background: white; border-radius: 12px;
   text-align: left; display: flex; flex-direction: column; gap: 2px;
@@ -154,4 +178,5 @@ input, select, textarea.field, button {
 .dnd { flex-direction: row; align-items: center; gap: 10px; margin: 16px 0; }
 @media (max-width: 1100px) {
   .calendar-layout, .count-row, .kpi-row, .contacts-split, .form-grid { grid-template-columns: 1fr; }
+  .main.contacts-main { max-height: none; overflow: auto; }
 }
