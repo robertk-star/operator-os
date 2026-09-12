@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { GOOGLE_USER_SCOPES } from "@/lib/googleAuth";
 
 const STARTERS = [
   "Summarize any unread emails that need my attention.",
@@ -15,39 +16,51 @@ type Turn = { role: "assistant" | "user"; text: string };
 export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState("disconnected");
+  const [email, setEmail] = useState("");
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([
     {
       role: "assistant",
-      text: "Ask me to summarize unread email, find a message or conversation, explain what needs a response, or prepare an email draft for your approval.",
+      text: "Ask me to summarize unread email, find a message, or prepare a draft for your approval.",
     },
   ]);
 
   useEffect(() => {
-    const flag = searchParams.get("google");
-    if (flag === "connected") setStatus("connected");
-    if (flag === "denied") setStatus("denied");
-    if (flag === "token_failed") setStatus("token_failed");
     if (!workspaceId) return;
     const supabase = createSupabaseBrowserClient();
     supabase
       .from("integrations")
-      .select("status")
+      .select("status, metadata")
       .eq("workspace_id", workspaceId)
       .eq("provider", "gmail")
       .maybeSingle()
       .then(({ data }) => {
         if (data?.status) setStatus(data.status);
+        const meta = data?.metadata as { email?: string } | null;
+        if (meta?.email) setEmail(meta.email);
       });
   }, [workspaceId, searchParams]);
+
+  async function addGmail() {
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/app/email`,
+        scopes: GOOGLE_USER_SCOPES,
+        queryParams: { access_type: "offline", prompt: "select_account" },
+      },
+    });
+    if (error) setTurns((current) => [...current, { role: "assistant", text: error.message }]);
+  }
 
   function ask(text: string) {
     const prompt = text.trim();
     if (!prompt) return;
     const reply =
       status === "connected"
-        ? "Google is connected in safe mode. Inbox listing is the next wiring step. I still will not send mail without your approval."
-        : "Gmail is not connected. Use Connect Gmail. That starts Google OAuth. Until keys are in Vercel, the connect route will tell you what is missing.";
+        ? `Gmail is connected${email ? ` as ${email}` : ""}. Inbox listing is next. I will not send mail without your approval.`
+        : "Add Gmail first. You will sign in with your Google account. You do not need a developer console.";
     setTurns((current) => [...current, { role: "user", text: prompt }, { role: "assistant", text: reply }]);
     setInput("");
   }
@@ -64,7 +77,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
           Gmail <span className="badge">Safe mode</span>
         </p>
         <h2>Gmail</h2>
-        <p className="meta">Ask questions about your inbox and prepare drafts. Email is never sent until you approve.</p>
+        <p className="meta">Add a Gmail address by signing in with Google. Drafts only. Nothing is sent until you approve.</p>
         <div className="thread">
           {turns.map((turn, index) => (
             <div key={index} className="bubble">
@@ -89,23 +102,15 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
       </section>
       <aside className="rail">
         <div className="card">
-          <p className="kicker">Gmail connection</p>
-          <p>
-            {status === "connected"
-              ? "Connected. Inbox sync methods come next."
-              : status === "denied"
-                ? "Google access was denied."
-                : status === "token_failed"
-                  ? "Token exchange failed. Check Vercel Google env vars."
-                  : "Not connected."}
-          </p>
-          <a className="chip" href="/api/google/start">
-            Connect Gmail
-          </a>
+          <p className="kicker">Gmail account</p>
+          <p>{status === "connected" ? email || "Connected" : "No Gmail connected."}</p>
+          <button type="button" className="chip" onClick={addGmail}>
+            {status === "connected" ? "Use a different Gmail" : "Add Gmail"}
+          </button>
         </div>
         <div className="card">
           <p className="kicker">Control boundary</p>
-          <p>Drafts only. No gmail.send scope.</p>
+          <p>People only sign in with Google. They do not configure OAuth.</p>
         </div>
       </aside>
     </>

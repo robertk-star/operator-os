@@ -1,37 +1,21 @@
-# Google OAuth for OperatorOS
+# Google sign-in for OperatorOS
 
-Browser-only setup. Do this in Google Cloud and Vercel.
+People who use OperatorOS only click Continue with Google or Add Gmail. They never open Google Cloud.
 
-## Scopes (safe mode)
+You, the platform owner, enable Google once.
 
-- gmail.readonly
-- gmail.compose
-- calendar.readonly
-- calendar.events
+## One-time platform setup
 
-Do not add gmail.send. OperatorOS prepares drafts. It does not send.
+1. Google Cloud → OAuth client, Web application.
+2. Authorized JavaScript origins:
+   - https://operator-os-rdk1.vercel.app
+   - https://crughgiwfhhbnpbzaifm.supabase.co
+3. Authorized redirect URIs:
+   - https://crughgiwfhhbnpbzaifm.supabase.co/auth/v1/callback
+   - https://operator-os-rdk1.vercel.app/auth/callback
+   - https://operator-os-rdk1.vercel.app/api/google/callback
+4. Supabase dashboard → Authentication → Providers → Google → on.
+   Paste the same Client ID and Client secret.
+5. Add the Client ID and secret to Vercel env if you also use `/api/google/start`.
 
-## Google Cloud
-
-1. Create or select a project at https://console.cloud.google.com
-2. Enable Gmail API and Google Calendar API
-3. APIs and Services → OAuth consent screen → External (or Internal if Workspace)
-4. App name: OperatorOS
-5. Create OAuth client → Web application
-6. Authorized redirect URI:
-   `https://operator-os-rdk1.vercel.app/api/google/callback`
-7. Copy Client ID and Client secret
-
-## Vercel env
-
-Project Settings → Environment Variables:
-
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_CLIENT_SECRET`
-- `GOOGLE_REDIRECT_URI`=`https://operator-os-rdk1.vercel.app/api/google/callback`
-
-Redeploy after saving.
-
-## In the app
-
-Gmail → Connect Gmail. That hits `/api/google/start`, then Google, then `/api/google/callback`, which stores tokens on the workspace integration row.
+After that, every workspace user just signs in with Gmail.
