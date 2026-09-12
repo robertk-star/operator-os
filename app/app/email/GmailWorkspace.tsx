@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { GOOGLE_USER_SCOPES } from "@/lib/googleAuth";
@@ -28,6 +28,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
   const [email, setEmail] = useState("");
   const [unread, setUnread] = useState<MailItem[]>([]);
   const [reply, setReply] = useState<MailItem[]>([]);
+  const [selectedId, setSelectedId] = useState("");
   const [error, setError] = useState("");
   const [input, setInput] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -35,7 +36,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
   const [turns, setTurns] = useState<Turn[]>([
     {
       role: "assistant",
-      text: "Ask me to summarize unread email, find a message, or prepare a draft for your approval.",
+      text: "Select an email on the right, then prepare a draft. Nothing is sent until you approve.",
     },
   ]);
 
@@ -45,12 +46,27 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
       .then((payload) => {
         setStatus(payload.connected ? "connected" : "disconnected");
         setEmail(payload.email || "");
-        setUnread(payload.unread || []);
-        setReply(payload.reply || []);
+        const nextUnread = payload.unread || [];
+        const nextReply = payload.reply || [];
+        setUnread(nextUnread);
+        setReply(nextReply);
         setError(payload.error || "");
+        const first = nextUnread[0] || nextReply[0];
+        if (first) setSelectedId(first.id);
       })
       .catch(() => setError("Could not reach Gmail."));
   }, [workspaceId, searchParams]);
+
+  const mailbox = useMemo(() => {
+    const seen = new Set<string>();
+    return [...unread, ...reply].filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [unread, reply]);
+
+  const selected = mailbox.find((item) => item.id === selectedId) || null;
 
   async function addGmail() {
     const supabase = createSupabaseBrowserClient();
@@ -73,35 +89,40 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
     };
   }
 
+  function prepareDraft(item: MailItem | null) {
+    if (!item) {
+      setTurns((current) => [...current, { role: "assistant", text: "Select an email first." }]);
+      return;
+    }
+    const next = makeDraft(item);
+    setDraft(next);
+    setTurns((current) => [
+      ...current,
+      { role: "user", text: `Prepare a draft for: ${item.subject}` },
+      { role: "assistant", text: `Draft ready for ${item.from}. Edit it below, then save to Gmail Drafts. It will not send.` },
+    ]);
+  }
+
   function answer(prompt: string) {
     const text = prompt.toLowerCase();
-    if (status !== "connected") {
-      return "Add Gmail first. Sign in with your Google account.";
-    }
-    if (text.includes("unread") || text.includes("attention")) {
-      return formatList(unread, "No unread inbox threads.");
-    }
-    if (text.includes("reply") || text.includes("respond")) {
-      return formatList(reply, "No recent inbox mail to review.");
-    }
+    if (status !== "connected") return "Add Gmail first. Sign in with your Google account.";
+    if (text.includes("unread") || text.includes("attention")) return formatList(unread, "No unread inbox threads.");
+    if (text.includes("reply") || text.includes("respond")) return formatList(reply, "No recent inbox mail to review.");
     if (text.includes("draft")) {
-      const first = unread[0] || reply[0];
-      if (!first) return "There is nothing to draft against yet.";
-      const next = makeDraft(first);
-      setDraft(next);
-      return `Draft ready. Nothing is sent until you approve.\n\nTo: ${next.to}\nSubject: ${next.subject}\n\n${next.text}`;
+      prepareDraft(selected);
+      return selected ? `Using ${selected.subject}` : "Select an email first.";
     }
-    const haystack = [...unread, ...reply];
-    const match = haystack.find((item) =>
-      text.split(" ").some((word) => word.length > 3 && (item.subject.toLowerCase().includes(word) || item.from.toLowerCase().includes(word) || item.snippet.toLowerCase().includes(word)))
-    );
-    if (match) return `${match.subject}\n${match.from}\n${match.snippet}`;
-    return formatList(unread, "Connected. Ask me to summarize unread mail or prepare a draft.");
+    return selected ? `${selected.subject}\n${selected.from}\n${selected.snippet}` : formatList(unread, "Select an email, then prepare a draft.");
   }
 
   function ask(text: string) {
     const prompt = text.trim();
     if (!prompt) return;
+    if (prompt.toLowerCase().includes("draft")) {
+      prepareDraft(selected);
+      setInput("");
+      return;
+    }
     setTurns((current) => [...current, { role: "user", text: prompt }, { role: "assistant", text: answer(prompt) }]);
     setInput("");
   }
@@ -120,7 +141,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
       return;
     }
     setDraftStatus("Draft saved in Gmail. It was not sent.");
-    setTurns((current) => [...current, { role: "assistant", text: "Draft saved in your Gmail Drafts folder. It was not sent." }]);
+    setTurns((current) => [...current, { role: "assistant", text: `Draft saved to ${draft.to}. It was not sent.` }]);
     setDraft(null);
   }
 
@@ -138,7 +159,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
         <h2>Gmail</h2>
         <p className="meta">
           {status === "connected"
-            ? `${email || "Gmail connected"}. ${unread.length} unread. Drafts only.`
+            ? `${email || "Gmail connected"}. Select a message, then prepare a draft.`
             : "Add Gmail to read your inbox here."}
         </p>
         {error ? <p className="meta">{error}</p> : null}
@@ -150,31 +171,43 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
             </div>
           ))}
           {draft ? (
-            <div className="card">
-              <p className="kicker">Approve draft</p>
-              <p className="meta">This writes a draft in Gmail. It does not send.</p>
-              <button type="button" onClick={approveDraft}>
-                Save draft in Gmail
-              </button>
+            <form
+              className="stack"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void approveDraft();
+              }}
+            >
+              <p className="kicker">Edit draft</p>
+              <label>
+                To
+                <input value={draft.to} onChange={(e) => setDraft({ ...draft, to: e.target.value })} />
+              </label>
+              <label>
+                Subject
+                <input value={draft.subject} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} />
+              </label>
+              <label>
+                Body
+                <textarea className="field" rows={6} value={draft.text} onChange={(e) => setDraft({ ...draft, text: e.target.value })} />
+              </label>
+              <button type="submit">Save draft in Gmail</button>
               <button type="button" className="chip" onClick={() => setDraft(null)}>
                 Discard
               </button>
-            </div>
+            </form>
           ) : null}
           {draftStatus ? <p className="meta">{draftStatus}</p> : null}
           <div className="chips">
-            <button className="chip" type="button" onClick={() => ask("Summarize any unread emails that need my attention.")}>
+            <button className="chip" type="button" onClick={() => ask("Summarize unread")}>
               Summarize unread
             </button>
-            <button className="chip" type="button" onClick={() => ask("List emails that still need a reply.")}>
-              Needs a reply
-            </button>
-            <button className="chip" type="button" onClick={() => ask("Prepare a draft reply and wait for my approval.")}>
-              Prepare a draft
+            <button className="chip" type="button" onClick={() => prepareDraft(selected)}>
+              Draft selected email
             </button>
           </div>
           <form className="composer" onSubmit={onSubmit}>
-            <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about Gmail or request a draft..." />
+            <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about the selected email..." />
             <button className="send" type="submit" aria-label="Send">
               ↑
             </button>
@@ -190,12 +223,28 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
           </button>
         </div>
         <div className="card">
-          <p className="kicker">Unread</p>
-          <p>{unread.length}</p>
+          <p className="kicker">Inbox</p>
+          <div className="mail-picker">
+            {mailbox.length === 0 ? <p className="meta">No messages loaded.</p> : null}
+            {mailbox.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={item.id === selectedId ? "mail-item selected" : "mail-item"}
+                onClick={() => {
+                  setSelectedId(item.id);
+                  setDraft(null);
+                }}
+              >
+                <strong>{item.subject}</strong>
+                <span>{item.from}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="card">
           <p className="kicker">Control boundary</p>
-          <p>Reads inbox. Saves drafts only after you approve. Does not send.</p>
+          <p>You pick the email. You approve the draft. Nothing is sent.</p>
         </div>
       </aside>
     </>
