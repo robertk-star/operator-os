@@ -14,14 +14,27 @@ type Lead = {
   source?: string;
 };
 
+function domainOf(url: string) {
+  try {
+    return url ? new URL(url.startsWith("http") ? url : `https://${url}`).hostname.replace(/^www\./, "") : null;
+  } catch {
+    return null;
+  }
+}
+
 export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string; defaultQuery: string }) {
   const [query, setQuery] = useState(defaultQuery);
   const [items, setItems] = useState<Lead[]>([]);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [page, setPage] = useState(1);
   const [nextPage, setNextPage] = useState(2);
   const [source, setSource] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+
+  function keyFor(lead: Lead) {
+    return `${lead.id || lead.name}-${lead.url}`;
+  }
 
   async function findLeads(targetPage: number) {
     setBusy(true);
@@ -29,7 +42,9 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
     const response = await fetch(`/api/revenue/leads?q=${encodeURIComponent(query)}&page=${targetPage}&t=${Date.now()}`);
     const payload = await response.json().catch(() => ({}));
     setBusy(false);
-    setItems(payload.items || []);
+    const nextItems: Lead[] = payload.items || [];
+    setItems(nextItems);
+    setSelected(Object.fromEntries(nextItems.map((item) => [keyFor(item), true])));
     setSource(payload.source || "");
     setPage(payload.page || targetPage);
     setNextPage(payload.nextPage || targetPage + 1);
@@ -46,40 +61,27 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
     );
   }
 
-  async function saveLead(lead: Lead) {
+  async function persist(lead: Lead) {
     const supabase = createSupabaseBrowserClient();
-    const domain = (() => {
-      try {
-        return lead.url ? new URL(lead.url.startsWith("http") ? lead.url : `https://${lead.url}`).hostname.replace(/^www\./, "") : null;
-      } catch {
-        return null;
-      }
-    })();
     const row: Record<string, unknown> = {
       workspace_id: workspaceId,
       name: lead.name,
-      domain,
+      domain: domainOf(lead.url),
     };
     if (lead.id) row.apollo_organization_id = lead.id;
     let { data: organization, error: orgError } = await supabase.from("organizations").insert(row).select("id").single();
     if (orgError && lead.id) {
-      const retry = await supabase.from("organizations").insert({ workspace_id: workspaceId, name: lead.name, domain }).select("id").single();
+      const retry = await supabase.from("organizations").insert({ workspace_id: workspaceId, name: lead.name, domain: domainOf(lead.url) }).select("id").single();
       organization = retry.data;
       orgError = retry.error;
     }
-    if (orgError || !organization) {
-      setMessage(orgError?.message || "Could not save organization.");
-      return;
-    }
+    if (orgError || !organization) throw new Error(orgError?.message || `Could not save ${lead.name}`);
     const { data: contact, error: contactError } = await supabase
       .from("contacts")
       .insert({ workspace_id: workspaceId, organization_id: organization.id, full_name: lead.name, email: null })
       .select("id")
       .single();
-    if (contactError || !contact) {
-      setMessage(contactError?.message || "Could not save contact.");
-      return;
-    }
+    if (contactError || !contact) throw new Error(contactError?.message || `Could not save contact for ${lead.name}`);
     const { error: oppError } = await supabase.from("opportunities").insert({
       workspace_id: workspaceId,
       contact_id: contact.id,
@@ -87,18 +89,33 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
       title: lead.name,
       stage: "new",
     });
-    if (oppError) {
-      setMessage(oppError.message);
-      return;
-    }
-    setMessage(`Saved ${lead.name}.`);
-    setItems((current) => current.filter((item) => item.name !== lead.name || item.url !== lead.url));
+    if (oppError) throw new Error(oppError.message);
   }
+
+  async function saveChosen(leads: Lead[]) {
+    setBusy(true);
+    let saved = 0;
+    const failed: string[] = [];
+    for (const lead of leads) {
+      try {
+        await persist(lead);
+        saved += 1;
+      } catch (error) {
+        failed.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    setBusy(false);
+    const savedKeys = new Set(leads.map(keyFor));
+    setItems((current) => current.filter((item) => !savedKeys.has(keyFor(item)) || failed.some((text) => text.includes(item.name))));
+    setMessage(failed.length ? `Saved ${saved}. ${failed[0]}` : `Saved ${saved} companies.`);
+  }
+
+  const chosen = items.filter((item) => selected[keyFor(item)]);
 
   return (
     <div className="stack wide">
       <p className="meta">
-        Filters come from <Link href="/app/settings">Settings</Link>. Each Find or Next 100 uses 1 Apollo credit.
+        Filters come from <Link href="/app/settings">Settings</Link>. Each Find or Next 100 uses 1 Apollo credit. Saving is free.
       </p>
       <form
         className="stack"
@@ -112,26 +129,38 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Leave blank to use Settings keywords" />
         </label>
         <button type="submit" disabled={busy}>
-          {busy ? "Finding companies..." : "Find companies (page 1)"}
+          {busy ? "Working..." : "Find companies (page 1)"}
         </button>
       </form>
-      <button type="button" className="chip" disabled={busy} onClick={() => void findLeads(nextPage)}>
-        Next 100 companies (page {nextPage}, 1 credit)
-      </button>
+      <div className="row">
+        <button type="button" className="chip" disabled={busy} onClick={() => void findLeads(nextPage)}>
+          Next 100 companies (1 credit)
+        </button>
+        <button type="button" className="chip" disabled={!items.length} onClick={() => setSelected(Object.fromEntries(items.map((item) => [keyFor(item), true])))}>
+          Select all
+        </button>
+        <button type="button" className="chip" disabled={!items.length} onClick={() => setSelected({})}>
+          Select none
+        </button>
+        <button type="button" disabled={busy || !chosen.length} onClick={() => void saveChosen(chosen)}>
+          Save selected ({chosen.length})
+        </button>
+      </div>
       {message ? <p className="meta">{message}</p> : null}
-      {source === "web" ? <p className="meta">These are website results, not Apollo.</p> : null}
-      <p className="meta">Current page {page}.</p>
+      <p className="meta">Page {page}.</p>
       <ul className="record-list">
         {items.map((item) => (
-          <li key={`${item.id || item.name}-${item.url}`}>
-            <div>
+          <li key={keyFor(item)}>
+            <label>
+              <input
+                type="checkbox"
+                checked={Boolean(selected[keyFor(item)])}
+                onChange={(event) => setSelected((current) => ({ ...current, [keyFor(item)]: event.target.checked }))}
+              />
               <strong>{item.name}</strong>
               <div className="meta">{[item.source || source, item.location, item.url].filter(Boolean).join(" · ")}</div>
               <p>{item.snippet}</p>
-            </div>
-            <button type="button" onClick={() => saveLead(item)}>
-              Save lead
-            </button>
+            </label>
           </li>
         ))}
       </ul>
