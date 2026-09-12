@@ -41,25 +41,13 @@ export default function SetupPage() {
       return;
     }
 
-    const { data: workspace, error: workspaceError } = await supabase
-      .from("workspaces")
-      .insert({ name, mode })
-      .select("id")
-      .single();
-
-    if (workspaceError || !workspace) {
-      setMessage(workspaceError?.message || "Could not create workspace.");
-      return;
-    }
-
-    const { error: memberError } = await supabase.from("workspace_members").insert({
-      workspace_id: workspace.id,
-      user_id: user.id,
-      role: "owner",
+    const { error } = await supabase.rpc("create_workspace", {
+      workspace_name: name,
+      workspace_mode: mode,
     });
 
-    if (memberError) {
-      setMessage(memberError.message);
+    if (error) {
+      setMessage(error.message);
       return;
     }
 
