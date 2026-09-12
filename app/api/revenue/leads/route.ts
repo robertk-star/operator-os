@@ -10,10 +10,17 @@ type Settings = {
   industries?: string;
 };
 
-function splitList(value: string | undefined) {
+function splitList(value: string | undefined, separators = /[;,\n]/) {
   return String(value || "")
-    .split(/[;,\n]/)
+    .split(separators)
     .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function splitRanges(value: string | undefined) {
+  return String(value || "")
+    .split(/[;\n]/)
+    .map((part) => part.trim().replace(/\s/g, ""))
     .filter(Boolean);
 }
 
@@ -70,7 +77,7 @@ async function searchApollo(settings: Settings, overrideQuery: string) {
   if (!key) return { items: [], error: "APOLLO_API_KEY is missing in Vercel." };
 
   const locations = splitList(settings.locations);
-  const ranges = splitList(settings.employeeRanges);
+  const ranges = splitRanges(settings.employeeRanges);
   const industries = splitList(settings.industries);
   const keywords = splitList(overrideQuery || settings.keywords);
   const tags = [...industries, ...keywords];
@@ -126,14 +133,19 @@ export async function GET(request: Request) {
   const settings = (data?.metadata || {}) as Settings;
   const filters = {
     locations: splitList(settings.locations),
-    employeeRanges: splitList(settings.employeeRanges),
+    employeeRanges: splitRanges(settings.employeeRanges),
     industries: splitList(settings.industries),
     keywords: splitList(requested || settings.keywords),
   };
 
   const apollo = await searchApollo(settings, requested || "");
   if (apollo.items.length) {
-    return NextResponse.json({ query: requested || settings.keywords || settings.industries || "", source: "apollo", items: apollo.items, filters });
+    return NextResponse.json({
+      query: requested || settings.keywords || settings.industries || "",
+      source: "apollo",
+      items: apollo.items,
+      filters,
+    });
   }
 
   const web = await searchWeb(settings, requested || "");
