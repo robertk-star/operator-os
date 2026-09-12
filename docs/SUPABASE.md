@@ -2,6 +2,10 @@
 
 Browser-only setup. No local CLI.
 
+## Live app
+
+https://operator-os-rdk1.vercel.app
+
 ## Project
 
 - Dashboard: https://supabase.com/dashboard/project/crughgiwfhhbnpbzaifm
@@ -10,16 +14,14 @@ Browser-only setup. No local CLI.
 ## Already applied
 
 1. `supabase/migrations/20260912080000_core_workspace.sql`
-2. Next: run `supabase/migrations/20260912083000_workspace_bootstrap_policies.sql` in the SQL Editor so a signed-in user can create a workspace.
+2. Run `supabase/migrations/20260912083000_workspace_bootstrap_policies.sql` in the SQL Editor so a signed-in user can create a workspace.
 
 ## Auth URLs in the dashboard
 
 Authentication → URL Configuration:
 
-- Site URL: your Vercel URL, for example https://operator-os.vercel.app
-- Redirect allow list: https://operator-os.vercel.app/auth/callback
-
-Replace the host with the real Vercel domain after import.
+- Site URL: https://operator-os-rdk1.vercel.app
+- Redirect allow list: https://operator-os-rdk1.vercel.app/auth/callback
 
 ## Vercel env
 
@@ -31,8 +33,8 @@ Project Settings → Environment Variables:
 
 ## First run in the browser
 
-1. Open the Vercel URL.
-2. Sign in / create account.
+1. Open https://operator-os-rdk1.vercel.app/login
+2. Create account or sign in.
 3. Confirm email if Supabase asks.
 4. Name the workspace (solo or team).
 5. Land on /app.
