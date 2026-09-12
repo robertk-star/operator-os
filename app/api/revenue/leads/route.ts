@@ -7,11 +7,12 @@ type Settings = {
   locations?: string;
   employeeRanges?: string;
   keywords?: string;
+  industries?: string;
 };
 
 function splitList(value: string | undefined) {
   return String(value || "")
-    .split(/[;\n]/)
+    .split(/[;,\n]/)
     .map((part) => part.trim())
     .filter(Boolean);
 }
@@ -50,10 +51,10 @@ function parseDuckDuckGo(html: string) {
 async function searchWeb(settings: Settings, overrideQuery: string) {
   const parts = [
     overrideQuery,
+    settings.industries,
     settings.keywords,
     settings.locations,
     settings.employeeRanges ? `${settings.employeeRanges} employees` : "",
-    settings.revenueTargets,
     "companies",
   ].filter(Boolean);
   const query = parts.join(" ");
@@ -70,16 +71,18 @@ async function searchApollo(settings: Settings, overrideQuery: string) {
 
   const locations = splitList(settings.locations);
   const ranges = splitList(settings.employeeRanges);
-  const keywords = splitList(overrideQuery || settings.keywords || settings.revenueTargets);
+  const industries = splitList(settings.industries);
+  const keywords = splitList(overrideQuery || settings.keywords);
+  const tags = [...industries, ...keywords];
 
-  if (!locations.length && !ranges.length && !keywords.length) {
-    return { items: [], error: "Set locations, employee ranges, or keywords in Settings first." };
+  if (!locations.length && !ranges.length && !tags.length) {
+    return { items: [], error: "Set locations, employee ranges, industries, or keywords in Settings first." };
   }
 
   const body: Record<string, unknown> = { page: 1, per_page: 10 };
   if (locations.length) body.organization_locations = locations;
   if (ranges.length) body.organization_num_employees_ranges = ranges;
-  if (keywords.length) body.q_organization_keyword_tags = keywords;
+  if (tags.length) body.q_organization_keyword_tags = tags;
 
   const response = await fetch("https://api.apollo.io/api/v1/mixed_companies/search", {
     method: "POST",
@@ -124,12 +127,13 @@ export async function GET(request: Request) {
   const filters = {
     locations: splitList(settings.locations),
     employeeRanges: splitList(settings.employeeRanges),
-    keywords: splitList(requested || settings.keywords || settings.revenueTargets),
+    industries: splitList(settings.industries),
+    keywords: splitList(requested || settings.keywords),
   };
 
   const apollo = await searchApollo(settings, requested || "");
   if (apollo.items.length) {
-    return NextResponse.json({ query: requested || settings.keywords || "", source: "apollo", items: apollo.items, filters });
+    return NextResponse.json({ query: requested || settings.keywords || settings.industries || "", source: "apollo", items: apollo.items, filters });
   }
 
   const web = await searchWeb(settings, requested || "");
