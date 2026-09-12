@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { ResearchButton } from "./ResearchButton";
 
 type Contact = {
   id: string;
@@ -25,6 +26,8 @@ type Contact = {
   linkedin_url?: string | null;
   status?: string | null;
   do_not_disturb?: boolean | null;
+  research_notes?: string | null;
+  researched_at?: string | null;
   organization_id?: string | null;
   organizations?: { name?: string; domain?: string } | { name?: string; domain?: string }[] | null;
 };
@@ -103,7 +106,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     const { data, error } = await supabase
       .from("contacts")
       .insert({ workspace_id: workspaceId, full_name: "New contact", status: "active", email_status: "review_required" })
-      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, source, email_status, street_address, city, state, postal_code, country, website, linkedin_url, status, do_not_disturb")
+      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, source, email_status, street_address, city, state, postal_code, country, website, linkedin_url, status, do_not_disturb, research_notes")
       .single();
     if (error || !data) {
       setMessage(error?.message || "Run the contact record SQL first.");
@@ -137,49 +140,34 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
           <p className="meta">People, companies, and CRM history in one place.</p>
         </div>
         <div className="row">
-          <button type="button" onClick={createContact}>
-            + New contact
-          </button>
-          <button type="button" className="chip" onClick={exportCsv}>
-            Export CSV
-          </button>
+          <button type="button" onClick={createContact}>+ New contact</button>
+          <button type="button" className="chip" onClick={exportCsv}>Export CSV</button>
         </div>
       </div>
       <div className="kpi-row">
         <button type="button" className={summary === "active" ? "kpi kpi-dark" : "kpi"} onClick={() => { setSummary("active"); setPage(1); }}>
-          <strong>{counts.active}</strong>
-          <span>Active</span>
+          <strong>{counts.active}</strong><span>Active</span>
         </button>
         <button type="button" className={summary === "archived" ? "kpi kpi-dark" : "kpi"} onClick={() => { setSummary("archived"); setPage(1); }}>
-          <strong>{counts.archived}</strong>
-          <span>Archived</span>
+          <strong>{counts.archived}</strong><span>Archived</span>
         </button>
         <button type="button" className={summary === "suppressed" ? "kpi kpi-dark" : "kpi"} onClick={() => { setSummary("suppressed"); setPage(1); }}>
-          <strong>{counts.suppressed}</strong>
-          <span>Suppressed</span>
+          <strong>{counts.suppressed}</strong><span>Suppressed</span>
         </button>
         <button type="button" className={summary === "missingEmail" ? "kpi kpi-dark" : "kpi"} onClick={() => { setSummary("missingEmail"); setPage(1); }}>
-          <strong>{counts.missingEmail}</strong>
-          <span>Missing email</span>
+          <strong>{counts.missingEmail}</strong><span>Missing email</span>
         </button>
       </div>
       <div className="contacts-split">
         <aside className="contacts-list">
           <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search name, company, email..." />
-          <p className="meta">
-            Showing {visible.length} of {filtered.length}
-          </p>
+          <p className="meta">Showing {visible.length} of {filtered.length}</p>
           {visible.map((item) => {
             const name = displayName(item);
             const company = orgName(item);
             const site = host(item.website);
             return (
-              <button
-                key={item.id}
-                type="button"
-                className={item.id === selectedId ? "contact-row selected" : "contact-row"}
-                onClick={() => setSelectedId(item.id)}
-              >
+              <button key={item.id} type="button" className={item.id === selectedId ? "contact-row selected" : "contact-row"} onClick={() => setSelectedId(item.id)}>
                 <strong>{name}</strong>
                 {company && company.toLowerCase() !== name.toLowerCase() ? <span>{company}</span> : null}
                 {site ? <small>{site}</small> : null}
@@ -188,15 +176,9 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
             );
           })}
           <div className="row">
-            <button type="button" className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
-              Previous
-            </button>
-            <span className="meta">
-              Page {page} of {pages}
-            </span>
-            <button type="button" className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>
-              Next
-            </button>
+            <button type="button" className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</button>
+            <span className="meta">Page {page} of {pages}</span>
+            <button type="button" className="chip" disabled={page >= pages} onClick={() => setPage((value) => value + 1)}>Next</button>
           </div>
         </aside>
         <div className="contact-record card">
@@ -206,11 +188,21 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
               <h3>{displayName(selected)}</h3>
               {selected.website ? (
                 <p>
-                  <a href={selected.website.startsWith("http") ? selected.website : `https://${selected.website}`} target="_blank" rel="noreferrer">
-                    {selected.website}
-                  </a>
+                  <a href={selected.website.startsWith("http") ? selected.website : `https://${selected.website}`} target="_blank" rel="noreferrer">{selected.website}</a>
                 </p>
               ) : null}
+              <ResearchButton
+                contactId={selected.id}
+                notes={selected.research_notes}
+                onDone={(notes, extra) => {
+                  setContacts((current) =>
+                    current.map((item) =>
+                      item.id === selected.id ? { ...item, research_notes: notes, ...extra } : item
+                    )
+                  );
+                  setMessage("Research saved.");
+                }}
+              />
               <div className="form-grid">
                 <label>First name<input value={selected.first_name || ""} onChange={(e) => save({ first_name: e.target.value })} /></label>
                 <label>Last name<input value={selected.last_name || ""} onChange={(e) => save({ last_name: e.target.value })} /></label>
@@ -222,9 +214,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
                 <label>
                   Email status
                   <select value={selected.email_status || "unknown"} onChange={(e) => save({ email_status: e.target.value })}>
-                    {EMAIL_STATUSES.map((status) => (
-                      <option key={status} value={status}>{status.replaceAll("_", " ")}</option>
-                    ))}
+                    {EMAIL_STATUSES.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
                   </select>
                 </label>
                 <label>Source<input value={selected.source || ""} onChange={(e) => save({ source: e.target.value })} /></label>
