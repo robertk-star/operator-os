@@ -1,33 +1,20 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
-import { ContactList } from "./ContactList";
+import { ContactsDesk } from "./ContactsDesk";
+
+const SELECT =
+  "id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, source, email_status, street_address, city, state, postal_code, country, website, linkedin_url, status, do_not_disturb, organization_id, organizations(name, domain)";
 
 export default async function ContactsPage() {
   const workspace = await getCurrentWorkspace();
   const supabase = await createSupabaseServerClient();
-  const [{ data: contacts }, { data: organizations }, { data: sequences }] = workspace
-    ? await Promise.all([
-        supabase
-          .from("contacts")
-          .select("id, full_name, email, phone, organization_id, organizations(name)")
-          .eq("workspace_id", workspace.id)
-          .order("full_name"),
-        supabase.from("organizations").select("id, name").eq("workspace_id", workspace.id).order("name"),
-        supabase.from("outbound_sequences").select("id, name").eq("workspace_id", workspace.id).order("name"),
-      ])
-    : [{ data: [] }, { data: [] }, { data: [] }];
+  const { data: contacts } = workspace
+    ? await supabase.from("contacts").select(SELECT).eq("workspace_id", workspace.id).order("full_name")
+    : { data: [] };
 
   return (
-    <section className="main">
-      <p className="kicker">Contacts</p>
-      <h2>Contacts</h2>
-      <p className="meta">Starts empty. People you add can go into Revenue and Outbound.</p>
-      <ContactList
-        workspaceId={workspace?.id || ""}
-        initialContacts={contacts || []}
-        organizations={organizations || []}
-        sequences={sequences || []}
-      />
+    <section className="main contacts-main">
+      <ContactsDesk workspaceId={workspace?.id || ""} initialContacts={contacts || []} />
     </section>
   );
 }
