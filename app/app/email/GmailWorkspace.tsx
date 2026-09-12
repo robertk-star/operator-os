@@ -5,8 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { GOOGLE_USER_SCOPES } from "@/lib/googleAuth";
 
-type MailItem = { id: string; subject: string; from: string; date: string; snippet: string; unread?: boolean };
+type MailItem = { id: string; subject: string; from: string; date: string; snippet: string };
 type Turn = { role: "assistant" | "user"; text: string };
+type Draft = { to: string; subject: string; text: string };
 
 function formatList(items: MailItem[], empty: string) {
   if (!items.length) return empty;
@@ -14,6 +15,11 @@ function formatList(items: MailItem[], empty: string) {
     .slice(0, 8)
     .map((item, index) => `${index + 1}. ${item.subject}\n    ${item.from}\n    ${item.snippet}`)
     .join("\n\n");
+}
+
+function emailFrom(from: string) {
+  const match = from.match(/<([^>]+)>/);
+  return match ? match[1] : from;
 }
 
 export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
@@ -24,6 +30,8 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
   const [reply, setReply] = useState<MailItem[]>([]);
   const [error, setError] = useState("");
   const [input, setInput] = useState("");
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draftStatus, setDraftStatus] = useState("");
   const [turns, setTurns] = useState<Turn[]>([
     {
       role: "assistant",
@@ -57,13 +65,21 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
     if (oauthError) setTurns((current) => [...current, { role: "assistant", text: oauthError.message }]);
   }
 
+  function makeDraft(item: MailItem): Draft {
+    return {
+      to: emailFrom(item.from),
+      subject: item.subject.startsWith("Re:") ? item.subject : `Re: ${item.subject}`,
+      text: `Thank you for your note.\n\nI will follow up with a complete reply shortly.`,
+    };
+  }
+
   function answer(prompt: string) {
     const text = prompt.toLowerCase();
     if (status !== "connected") {
-      return "Add Gmail first. Sign in with your Google account. You do not need a developer console.";
+      return "Add Gmail first. Sign in with your Google account.";
     }
     if (text.includes("unread") || text.includes("attention")) {
-      return formatList(unread, "No unread mail in the last 21 days.");
+      return formatList(unread, "No unread inbox threads.");
     }
     if (text.includes("reply") || text.includes("respond")) {
       return formatList(reply, "No recent inbox mail to review.");
@@ -71,14 +87,16 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
     if (text.includes("draft")) {
       const first = unread[0] || reply[0];
       if (!first) return "There is nothing to draft against yet.";
-      return `Draft ready for approval. Nothing will be sent.\n\nTo: ${first.from}\nSubject: Re: ${first.subject}\n\nThank you for your note. I will follow up with a complete reply shortly.\n\nApprove this in a later step before anything leaves Gmail.`;
+      const next = makeDraft(first);
+      setDraft(next);
+      return `Draft ready. Nothing is sent until you approve.\n\nTo: ${next.to}\nSubject: ${next.subject}\n\n${next.text}`;
     }
     const haystack = [...unread, ...reply];
-    const match = haystack.find((item) => text.split(" ").some((word) => word.length > 3 && (item.subject.toLowerCase().includes(word) || item.from.toLowerCase().includes(word) || item.snippet.toLowerCase().includes(word))));
-    if (match) {
-      return `${match.subject}\n${match.from}\n${match.snippet}`;
-    }
-    return formatList(unread, "Connected. Ask me to summarize unread mail or list what needs a reply.");
+    const match = haystack.find((item) =>
+      text.split(" ").some((word) => word.length > 3 && (item.subject.toLowerCase().includes(word) || item.from.toLowerCase().includes(word) || item.snippet.toLowerCase().includes(word)))
+    );
+    if (match) return `${match.subject}\n${match.from}\n${match.snippet}`;
+    return formatList(unread, "Connected. Ask me to summarize unread mail or prepare a draft.");
   }
 
   function ask(text: string) {
@@ -86,6 +104,24 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
     if (!prompt) return;
     setTurns((current) => [...current, { role: "user", text: prompt }, { role: "assistant", text: answer(prompt) }]);
     setInput("");
+  }
+
+  async function approveDraft() {
+    if (!draft) return;
+    setDraftStatus("Saving draft in Gmail...");
+    const response = await fetch("/api/gmail/drafts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(draft),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setDraftStatus(payload.error || "Could not save draft.");
+      return;
+    }
+    setDraftStatus("Draft saved in Gmail. It was not sent.");
+    setTurns((current) => [...current, { role: "assistant", text: "Draft saved in your Gmail Drafts folder. It was not sent." }]);
+    setDraft(null);
   }
 
   function onSubmit(event: FormEvent) {
@@ -113,6 +149,19 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
               <pre className="mail-pre">{turn.text}</pre>
             </div>
           ))}
+          {draft ? (
+            <div className="card">
+              <p className="kicker">Approve draft</p>
+              <p className="meta">This writes a draft in Gmail. It does not send.</p>
+              <button type="button" onClick={approveDraft}>
+                Save draft in Gmail
+              </button>
+              <button type="button" className="chip" onClick={() => setDraft(null)}>
+                Discard
+              </button>
+            </div>
+          ) : null}
+          {draftStatus ? <p className="meta">{draftStatus}</p> : null}
           <div className="chips">
             <button className="chip" type="button" onClick={() => ask("Summarize any unread emails that need my attention.")}>
               Summarize unread
@@ -146,7 +195,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
         </div>
         <div className="card">
           <p className="kicker">Control boundary</p>
-          <p>Reads inbox. Prepares drafts. Does not send.</p>
+          <p>Reads inbox. Saves drafts only after you approve. Does not send.</p>
         </div>
       </aside>
     </>
