@@ -4,7 +4,6 @@ import { FormEvent, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const STAGES = ["new", "qualified", "working", "won", "lost"] as const;
-
 type Contact = { id: string; full_name: string };
 type Opportunity = {
   id: string;
@@ -20,13 +19,11 @@ function personName(item: Opportunity) {
   if (Array.isArray(value)) return value[0]?.full_name;
   return value?.full_name;
 }
-
 function dollarsToCents(value: string) {
   const parsed = Number(value.replace(/[^0-9.]/g, ""));
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return Math.round(parsed * 100);
 }
-
 function formatMoney(cents: number | null) {
   if (cents == null) return "No amount";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100);
@@ -36,15 +33,17 @@ export function RevenueBoard({
   workspaceId,
   initialOpportunities,
   contacts,
+  selectedContactId,
 }: {
   workspaceId: string;
   initialOpportunities: Opportunity[];
   contacts: Contact[];
+  selectedContactId: string;
 }) {
   const [items, setItems] = useState(initialOpportunities);
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
-  const [contactId, setContactId] = useState("");
+  const [contactId, setContactId] = useState(selectedContactId);
   const [stage, setStage] = useState<(typeof STAGES)[number]>("new");
   const [message, setMessage] = useState("");
 
@@ -60,7 +59,6 @@ export function RevenueBoard({
 
   async function addOpportunity(event: FormEvent) {
     event.preventDefault();
-    if (!workspaceId || !title.trim()) return;
     const supabase = createSupabaseBrowserClient();
     const { data, error } = await supabase
       .from("opportunities")
@@ -86,10 +84,7 @@ export function RevenueBoard({
 
   async function changeStage(id: string, next: string) {
     const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase
-      .from("opportunities")
-      .update({ stage: next, updated_at: new Date().toISOString() })
-      .eq("id", id);
+    const { error } = await supabase.from("opportunities").update({ stage, updated_at: new Date().toISOString() }).eq("id", id);
     if (error) {
       setMessage(error.message);
       return;
@@ -105,11 +100,11 @@ export function RevenueBoard({
       <form className="stack" onSubmit={addOpportunity}>
         <label>
           Opportunity
-          <input value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="Website rebuild" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} required />
         </label>
         <label>
           Amount (USD)
-          <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="2500" />
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} />
         </label>
         <label>
           Contact
@@ -141,9 +136,7 @@ export function RevenueBoard({
           <li key={item.id}>
             <div>
               <strong>{item.title}</strong>
-              <div className="meta">
-                {[formatMoney(item.amount_cents), personName(item) || "Unassigned", item.stage].join(" · ")}
-              </div>
+              <div className="meta">{[formatMoney(item.amount_cents), personName(item) || "Unassigned", item.stage].join(" · ")}</div>
             </div>
             <label>
               Stage

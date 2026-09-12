@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Organization = { id: string; name: string };
+type Sequence = { id: string; name: string };
 type Contact = {
   id: string;
   full_name: string;
@@ -24,10 +25,12 @@ export function ContactList({
   workspaceId,
   initialContacts,
   organizations,
+  sequences,
 }: {
   workspaceId: string;
   initialContacts: Contact[];
   organizations: Organization[];
+  sequences: Sequence[];
 }) {
   const [contacts, setContacts] = useState(initialContacts);
   const [orgs, setOrgs] = useState(organizations);
@@ -39,16 +42,13 @@ export function ContactList({
 
   async function addContact(event: FormEvent) {
     event.preventDefault();
-    if (!workspaceId || !fullName.trim()) return;
     const supabase = createSupabaseBrowserClient();
     let organizationId: string | null = null;
     const trimmedOrg = organizationName.trim();
-
     if (trimmedOrg) {
       const existing = orgs.find((org) => org.name.toLowerCase() === trimmedOrg.toLowerCase());
-      if (existing) {
-        organizationId = existing.id;
-      } else {
+      if (existing) organizationId = existing.id;
+      else {
         const { data: createdOrg, error: orgError } = await supabase
           .from("organizations")
           .insert({ workspace_id: workspaceId, name: trimmedOrg })
@@ -62,7 +62,6 @@ export function ContactList({
         setOrgs((current) => [...current, createdOrg]);
       }
     }
-
     const { data, error } = await supabase
       .from("contacts")
       .insert({
@@ -74,12 +73,10 @@ export function ContactList({
       })
       .select("id, full_name, email, phone, organization_id, organizations(name)")
       .single();
-
     if (error || !data) {
       setMessage(error?.message || "Could not save contact.");
       return;
     }
-
     setContacts((current) => [...current, data].sort((a, b) => a.full_name.localeCompare(b.full_name)));
     setFullName("");
     setEmail("");
@@ -88,12 +85,24 @@ export function ContactList({
     setMessage("");
   }
 
+  async function enroll(contactId: string, sequenceId: string) {
+    if (!sequenceId) return;
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase.from("sequence_enrollments").insert({
+      workspace_id: workspaceId,
+      sequence_id: sequenceId,
+      contact_id: contactId,
+      status: "queued",
+    });
+    setMessage(error ? error.message : "Added to sequence.");
+  }
+
   return (
     <div className="stack wide">
       <form className="stack" onSubmit={addContact}>
         <label>
           Name
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} required placeholder="Jordan Lee" />
+          <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
         </label>
         <label>
           Email
@@ -105,7 +114,7 @@ export function ContactList({
         </label>
         <label>
           Organization
-          <input value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} placeholder="Optional" />
+          <input value={organizationName} onChange={(e) => setOrganizationName(e.target.value)} />
         </label>
         <button type="submit">Add contact</button>
       </form>
@@ -116,11 +125,25 @@ export function ContactList({
           <li key={contact.id}>
             <div>
               <strong>{contact.full_name}</strong>
-              <div className="meta">
-                {[orgName(contact), contact.email, contact.phone].filter(Boolean).join(" · ") || "No details yet"}
+              <div className="meta">{[orgName(contact), contact.email, contact.phone].filter(Boolean).join(" · ") || "No details yet"}</div>
+              <div className="row">
+                <Link href={`/app/relationships?contact=${contact.id}`}>Log interaction</Link>
+                <Link href={`/app/revenue?contact=${contact.id}`}>Add opportunity</Link>
               </div>
+              {sequences.length ? (
+                <label>
+                  Add to sequence
+                  <select defaultValue="" onChange={(e) => enroll(contact.id, e.target.value)}>
+                    <option value="">Choose sequence</option>
+                    {sequences.map((sequence) => (
+                      <option key={sequence.id} value={sequence.id}>
+                        {sequence.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
             </div>
-            <Link href={`/app/relationships?contact=${contact.id}`}>Log interaction</Link>
           </li>
         ))}
       </ul>
