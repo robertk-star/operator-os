@@ -14,7 +14,7 @@ body {
   line-height: 1.5;
 }
 a { color: inherit; }
-.wrap { max-width: 720px; margin: 0 auto; padding: 64px 24px; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; }
 .kicker {
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -30,14 +30,44 @@ h1 { font-size: 42px; font-weight: 500; margin: 12px 0 16px; }
   list-style: none;
 }
 .stack { display: flex; flex-direction: column; gap: 16px; max-width: 420px; }
+.stack.wide { max-width: none; }
 .row { display: flex; gap: 12px; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-input, select, button {
+input, select, button, textarea {
   font: inherit;
   padding: 10px 12px;
   border: 1px solid var(--line);
   background: white;
   color: var(--ink);
 }
+textarea { resize: vertical; }
 button { cursor: pointer; }
 button.secondary { background: transparent; }
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 28px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+}
+.app-nav .active { text-decoration: underline; }
+.record-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.record-list li {
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  background: white;
+}
+.record-list li.done strong { text-decoration: line-through; opacity: 0.65; }
+.meta { font-size: 13px; opacity: 0.7; }
