@@ -167,10 +167,18 @@ input, select, textarea.field, button {
   min-height: 0;
   overflow: auto;
 }
+.contacts-list { align-items: stretch; }
+.contacts-list input { width: 100%; }
 .contact-record { margin-bottom: 0; }
 .contact-row {
-  border: 1px solid var(--line); background: white; border-radius: 12px;
-  text-align: left; display: flex; flex-direction: column; gap: 2px;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 12px;
+  text-align: left;
 }
 .contact-row.selected { border-color: #17284f; background: #eef3f8; }
 .contact-row em { font-style: normal; font-size: 10px; font-weight: 700; color: #5b6570; }
