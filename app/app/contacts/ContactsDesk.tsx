@@ -40,12 +40,13 @@ function orgName(contact: Contact) {
 function displayName(contact: Contact) {
   return [contact.first_name, contact.last_name].filter(Boolean).join(" ") || contact.full_name || orgName(contact) || "Untitled";
 }
-function emailBadge(contact: Contact) {
-  if (contact.do_not_disturb || contact.email_status === "do_not_contact") return "DO NOT CONTACT";
-  if (!contact.email) return "REVIEW REQUIRED";
-  if (contact.email_status === "review_required") return "REVIEW REQUIRED";
-  if (contact.email_status === "valid") return "PROSPECT";
-  return (contact.email_status || "UNKNOWN").replaceAll("_", " ").toUpperCase();
+function host(value?: string | null) {
+  if (!value) return "";
+  try {
+    return new URL(value.startsWith("http") ? value : `https://${value}`).hostname.replace(/^www\./, "");
+  } catch {
+    return value;
+  }
 }
 
 export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: string; initialContacts: Contact[] }) {
@@ -75,7 +76,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
       if (summary === "suppressed" && !(item.do_not_disturb || item.email_status === "do_not_contact")) return false;
       if (summary === "missingEmail" && item.email) return false;
       if (!term) return true;
-      return [displayName(item), orgName(item), item.email, item.phone, item.industry].join(" ").toLowerCase().includes(term);
+      return [displayName(item), orgName(item), item.email, item.website, item.industry].join(" ").toLowerCase().includes(term);
     });
   }, [contacts, query, summary]);
 
@@ -88,10 +89,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     const fullName =
       [patch.first_name ?? selected.first_name, patch.last_name ?? selected.last_name].filter(Boolean).join(" ") ||
       selected.full_name;
-    const { error } = await supabase
-      .from("contacts")
-      .update({ ...patch, full_name: fullName })
-      .eq("id", selected.id);
+    const { error } = await supabase.from("contacts").update({ ...patch, full_name: fullName }).eq("id", selected.id);
     if (error) {
       setMessage(error.message);
       return;
@@ -171,19 +169,24 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
           <p className="meta">
             Showing {visible.length} of {filtered.length}
           </p>
-          {visible.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={item.id === selectedId ? "contact-row selected" : "contact-row"}
-              onClick={() => setSelectedId(item.id)}
-            >
-              <strong>{displayName(item)}</strong>
-              <span>{orgName(item) || "No company"}</span>
-              <em>{emailBadge(item)}</em>
-              <small>{item.email || item.phone || "No email or phone"}</small>
-            </button>
-          ))}
+          {visible.map((item) => {
+            const name = displayName(item);
+            const company = orgName(item);
+            const site = host(item.website);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={item.id === selectedId ? "contact-row selected" : "contact-row"}
+                onClick={() => setSelectedId(item.id)}
+              >
+                <strong>{name}</strong>
+                {company && company.toLowerCase() !== name.toLowerCase() ? <span>{company}</span> : null}
+                {site ? <small>{site}</small> : null}
+                {item.do_not_disturb ? <em>DND</em> : null}
+              </button>
+            );
+          })}
           <div className="row">
             <button type="button" className="chip" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
               Previous
@@ -201,87 +204,44 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
             <>
               <p className="kicker">Contact record</p>
               <h3>{displayName(selected)}</h3>
+              {selected.website ? (
+                <p>
+                  <a href={selected.website.startsWith("http") ? selected.website : `https://${selected.website}`} target="_blank" rel="noreferrer">
+                    {selected.website}
+                  </a>
+                </p>
+              ) : null}
               <div className="form-grid">
-                <label>
-                  First name
-                  <input value={selected.first_name || ""} onChange={(e) => save({ first_name: e.target.value })} />
-                </label>
-                <label>
-                  Last name
-                  <input value={selected.last_name || ""} onChange={(e) => save({ last_name: e.target.value })} />
-                </label>
-                <label>
-                  Business name
-                  <input value={selected.business_name || orgName(selected)} onChange={(e) => save({ business_name: e.target.value })} />
-                </label>
-                <label>
-                  Email
-                  <input value={selected.email || ""} onChange={(e) => save({ email: e.target.value })} />
-                </label>
-                <label>
-                  Phone
-                  <input value={selected.phone || ""} onChange={(e) => save({ phone: e.target.value })} />
-                </label>
-                <label>
-                  Job title
-                  <input value={selected.job_title || ""} onChange={(e) => save({ job_title: e.target.value })} />
-                </label>
-                <label>
-                  Industry
-                  <input value={selected.industry || ""} onChange={(e) => save({ industry: e.target.value })} />
-                </label>
+                <label>First name<input value={selected.first_name || ""} onChange={(e) => save({ first_name: e.target.value })} /></label>
+                <label>Last name<input value={selected.last_name || ""} onChange={(e) => save({ last_name: e.target.value })} /></label>
+                <label>Business name<input value={selected.business_name || orgName(selected)} onChange={(e) => save({ business_name: e.target.value })} /></label>
+                <label>Email<input value={selected.email || ""} onChange={(e) => save({ email: e.target.value })} /></label>
+                <label>Phone<input value={selected.phone || ""} onChange={(e) => save({ phone: e.target.value })} /></label>
+                <label>Job title<input value={selected.job_title || ""} onChange={(e) => save({ job_title: e.target.value })} /></label>
+                <label>Industry<input value={selected.industry || ""} onChange={(e) => save({ industry: e.target.value })} /></label>
                 <label>
                   Email status
                   <select value={selected.email_status || "unknown"} onChange={(e) => save({ email_status: e.target.value })}>
                     {EMAIL_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {status.replaceAll("_", " ")}
-                      </option>
+                      <option key={status} value={status}>{status.replaceAll("_", " ")}</option>
                     ))}
                   </select>
                 </label>
-                <label>
-                  Source
-                  <input value={selected.source || ""} onChange={(e) => save({ source: e.target.value })} />
-                </label>
-                <label>
-                  Website
-                  <input value={selected.website || ""} onChange={(e) => save({ website: e.target.value })} />
-                </label>
-                <label>
-                  Tags
-                  <input value={(selected.tags || []).join(", ")} onChange={(e) => save({ tags: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} />
-                </label>
-                <label>
-                  LinkedIn
-                  <input value={selected.linkedin_url || ""} onChange={(e) => save({ linkedin_url: e.target.value })} />
-                </label>
+                <label>Source<input value={selected.source || ""} onChange={(e) => save({ source: e.target.value })} /></label>
+                <label>Website<input value={selected.website || ""} onChange={(e) => save({ website: e.target.value })} /></label>
+                <label>Tags<input value={(selected.tags || []).join(", ")} onChange={(e) => save({ tags: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /></label>
+                <label>LinkedIn<input value={selected.linkedin_url || ""} onChange={(e) => save({ linkedin_url: e.target.value })} /></label>
               </div>
               <label className="dnd">
                 <input type="checkbox" checked={Boolean(selected.do_not_disturb)} onChange={(e) => save({ do_not_disturb: e.target.checked })} />
                 DND. Do not prepare or create email drafts for this contact.
               </label>
               <div className="form-grid">
-                <label>
-                  Street address
-                  <input value={selected.street_address || ""} onChange={(e) => save({ street_address: e.target.value })} />
-                </label>
-                <label>
-                  City
-                  <input value={selected.city || ""} onChange={(e) => save({ city: e.target.value })} />
-                </label>
-                <label>
-                  State
-                  <input value={selected.state || ""} onChange={(e) => save({ state: e.target.value })} />
-                </label>
-                <label>
-                  Postal code
-                  <input value={selected.postal_code || ""} onChange={(e) => save({ postal_code: e.target.value })} />
-                </label>
-                <label>
-                  Country
-                  <input value={selected.country || "United States"} onChange={(e) => save({ country: e.target.value })} />
-                </label>
+                <label>Street address<input value={selected.street_address || ""} onChange={(e) => save({ street_address: e.target.value })} /></label>
+                <label>City<input value={selected.city || ""} onChange={(e) => save({ city: e.target.value })} /></label>
+                <label>State<input value={selected.state || ""} onChange={(e) => save({ state: e.target.value })} /></label>
+                <label>Postal code<input value={selected.postal_code || ""} onChange={(e) => save({ postal_code: e.target.value })} /></label>
+                <label>Country<input value={selected.country || "United States"} onChange={(e) => save({ country: e.target.value })} /></label>
               </div>
               {message ? <p className="meta">{message}</p> : null}
             </>
