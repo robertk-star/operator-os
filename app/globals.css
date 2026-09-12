@@ -132,6 +132,26 @@ input, select, textarea.field, button {
 .day em.appointment { background: #e8eff8; color: #203c70; }
 .day em.task { background: #fff8e4; color: #705a20; }
 .day-rail { min-width: 0; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.contacts-main { max-width: none; }
+.contacts-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.kpi-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; margin: 20px 0; }
+.kpi {
+  border: 1px solid var(--line); background: white; border-radius: 16px;
+  text-align: left; min-height: 88px; cursor: pointer;
+}
+.kpi strong { display: block; font-size: 28px; }
+.kpi-dark { background: #17243f; color: white; border-color: #17243f; }
+.contacts-split { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; }
+.contacts-list { display: flex; flex-direction: column; gap: 8px; }
+.contact-row {
+  border: 1px solid var(--line); background: white; border-radius: 12px;
+  text-align: left; display: flex; flex-direction: column; gap: 2px;
+}
+.contact-row.selected { border-color: #17284f; background: #eef3f8; }
+.contact-row em { font-style: normal; font-size: 10px; font-weight: 700; color: #5b6570; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.dnd { flex-direction: row; align-items: center; gap: 10px; margin: 16px 0; }
 @media (max-width: 1100px) {
-  .calendar-layout, .count-row { grid-template-columns: 1fr; }
+  .calendar-layout, .count-row, .kpi-row, .contacts-split, .form-grid { grid-template-columns: 1fr; }
 }
