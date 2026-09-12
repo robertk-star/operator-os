@@ -3,6 +3,15 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 import { getGmailIntegrationToken, refreshGoogleAccessToken } from "@/lib/googleTokens";
 
+function decodeEntities(value: string) {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
 async function gmailToken(supabase: any, workspaceId: string, sessionToken?: string | null) {
   const stored = await getGmailIntegrationToken(supabase, workspaceId);
   let token = sessionToken || stored.token;
@@ -29,37 +38,51 @@ async function gmailToken(supabase: any, workspaceId: string, sessionToken?: str
   return { token, email: stored.email };
 }
 
-async function listMessages(token: string, query: string) {
-  const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+async function readMessage(token: string, id: string) {
+  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
+  url.searchParams.set("format", "metadata");
+  url.searchParams.append("metadataHeaders", "Subject");
+  url.searchParams.append("metadataHeaders", "From");
+  url.searchParams.append("metadataHeaders", "Date");
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const message = await response.json();
+  const headers: Record<string, string> = {};
+  for (const header of message.payload?.headers || []) {
+    headers[String(header.name).toLowerCase()] = header.value;
+  }
+  return {
+    id,
+    subject: decodeEntities(headers.subject || "(No subject)"),
+    from: decodeEntities(headers.from || ""),
+    date: headers.date || "",
+    snippet: decodeEntities(message.snippet || ""),
+    unread: Array.isArray(message.labelIds) && message.labelIds.includes("UNREAD"),
+  };
+}
+
+async function listThreads(token: string, query: string) {
+  const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/threads");
   listUrl.searchParams.set("q", query);
   listUrl.searchParams.set("maxResults", "15");
   const list = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` } });
   const payload = await list.json();
   if (!list.ok) throw new Error(payload.error?.message || "Gmail list failed");
-  const ids = (payload.messages || []).map((item: { id: string }) => item.id);
+  const threads = payload.threads || [];
   const details = await Promise.all(
-    ids.map(async (id: string) => {
-      const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
-      url.searchParams.set("format", "metadata");
-      url.searchParams.set("metadataHeaders", "Subject");
-      url.searchParams.set("metadataHeaders", "From");
-      url.searchParams.set("metadataHeaders", "Date");
-      const response = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
-      const message = await response.json();
-      const headers = Object.fromEntries(
-        (message.payload?.headers || []).map((header: { name: string; value: string }) => [header.name.toLowerCase(), header.value])
-      );
-      return {
-        id,
-        subject: headers.subject || "(No subject)",
-        from: headers.from || "",
-        date: headers.date || "",
-        snippet: message.snippet || "",
-        unread: Array.isArray(message.labelIds) && message.labelIds.includes("UNREAD"),
-      };
+    threads.map(async (thread: { id: string }) => {
+      const threadUrl = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${thread.id}`);
+      threadUrl.searchParams.set("format", "metadata");
+      threadUrl.searchParams.append("metadataHeaders", "Subject");
+      threadUrl.searchParams.append("metadataHeaders", "From");
+      threadUrl.searchParams.append("metadataHeaders", "Date");
+      const response = await fetch(threadUrl, { headers: { Authorization: `Bearer ${token}` } });
+      const body = await response.json();
+      const last = body.messages?.[body.messages.length - 1];
+      if (!last) return null;
+      return readMessage(token, last.id);
     })
   );
-  return details;
+  return details.filter(Boolean);
 }
 
 export async function GET() {
@@ -78,10 +101,8 @@ export async function GET() {
   }
 
   try {
-    const [unread, reply] = await Promise.all([
-      listMessages(token, "is:unread newer_than:21d"),
-      listMessages(token, "is:inbox newer_than:21d -from:me"),
-    ]);
+    const unread = await listThreads(token, "in:inbox is:unread -in:chats -category:promotions -category:social");
+    const reply = await listThreads(token, "in:inbox newer_than:14d -from:me -in:chats");
     return NextResponse.json({ connected: true, email, unread, reply });
   } catch (error) {
     return NextResponse.json({

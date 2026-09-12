@@ -9,7 +9,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
 body {
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
   background: var(--paper);
   color: var(--ink);
   line-height: 1.5;
@@ -31,9 +31,9 @@ button, input, select, textarea { font: inherit; }
   width: 48px; height: 48px; border-radius: 12px;
   background: #17243f; color: white;
   display: grid; place-items: center;
-  font-family: Georgia, serif; font-size: 24px; font-weight: 700;
+  font-family: Arial, Helvetica, sans-serif; font-size: 24px; font-weight: 700;
 }
-.brand h1 { margin: 0; font-family: Georgia, serif; font-size: 22px; font-weight: 700; }
+.brand h1 { margin: 0; font-family: Arial, Helvetica, sans-serif; font-size: 22px; font-weight: 700; }
 .brand p { margin: 0; font-size: 12px; color: #8a9196; }
 .new-chat {
   margin: 0 8px 16px;
@@ -74,8 +74,9 @@ button, input, select, textarea { font: inherit; }
   margin-bottom: 16px;
 }
 .kicker { letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; color: #899196; font-weight: 700; }
-h2 { font-family: Georgia, serif; font-size: 32px; margin: 8px 0 8px; font-weight: 600; }
-h3 { font-family: Georgia, serif; margin: 8px 0; }
+h2, h3 { font-family: Arial, Helvetica, sans-serif; font-weight: 700; }
+h2 { font-size: 32px; margin: 8px 0; }
+h3 { margin: 8px 0; }
 .badge {
   display: inline-flex; align-items: center;
   border-radius: 999px; background: #eff4f8; color: #284073;
@@ -95,6 +96,7 @@ h3 { font-family: Georgia, serif; margin: 8px 0; }
 .send { width: 40px; height: 40px; border-radius: 12px; border: 0; background: #d8dfe2; cursor: pointer; }
 .thread { max-width: 720px; margin: 32px auto 0; }
 .bubble { margin-bottom: 20px; }
+.mail-pre { margin: 0; white-space: pre-wrap; font-family: Arial, Helvetica, sans-serif; }
 .meta { font-size: 13px; color: #737c82; }
 .wrap { max-width: 760px; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
