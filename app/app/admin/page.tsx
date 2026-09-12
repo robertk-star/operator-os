@@ -1,14 +1,34 @@
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
+import { AdminPanel } from "./AdminPanel";
 
 export default async function AdminPage() {
   const workspace = await getCurrentWorkspace();
+  const supabase = await createSupabaseServerClient();
+  const [{ data: members }, { data: invites }] = workspace
+    ? await Promise.all([
+        supabase.from("workspace_members").select("id, role, user_id, created_at").eq("workspace_id", workspace.id),
+        supabase
+          .from("workspace_invites")
+          .select("id, email, role, accepted_at, created_at")
+          .eq("workspace_id", workspace.id)
+          .order("created_at", { ascending: false }),
+      ])
+    : [{ data: [] }, { data: [] }];
+
   return (
     <section className="main">
       <p className="kicker">Admin</p>
       <h2>Admin</h2>
-      <p>Workspace: {workspace?.name}</p>
-      <p className="meta">Mode: {workspace?.mode}. Role: {workspace?.role}.</p>
-      <p className="meta">Member invites for team mode come next. This workspace has no SaffHire or screening defaults.</p>
+      <p className="meta">
+        {workspace?.name} · {workspace?.mode} · your role {workspace?.role}
+      </p>
+      <AdminPanel
+        workspaceId={workspace?.id || ""}
+        canInvite={workspace?.mode === "team" && (workspace?.role === "owner" || workspace?.role === "admin")}
+        members={members || []}
+        invites={invites || []}
+      />
     </section>
   );
 }

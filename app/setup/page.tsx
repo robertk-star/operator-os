@@ -11,23 +11,22 @@ export default function SetupPage() {
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    supabase
-      .from("workspace_members")
-      .select("workspace_id")
-      .limit(1)
-      .then(({ data, error }) => {
-        if (error) {
-          setMessage(error.message);
-          setReady(true);
-          return;
-        }
-        if (data && data.length > 0) {
-          window.location.href = "/app";
-          return;
-        }
-        setMessage("");
+    async function boot() {
+      await supabase.rpc("accept_pending_invites");
+      const { data, error } = await supabase.from("workspace_members").select("workspace_id").limit(1);
+      if (error) {
+        setMessage(error.message);
         setReady(true);
-      });
+        return;
+      }
+      if (data && data.length > 0) {
+        window.location.href = "/app/email";
+        return;
+      }
+      setMessage("");
+      setReady(true);
+    }
+    void boot();
   }, []);
 
   async function onSubmit(event: FormEvent) {
@@ -40,36 +39,33 @@ export default function SetupPage() {
       window.location.href = "/login";
       return;
     }
-
     const { error } = await supabase.rpc("create_workspace", {
       workspace_name: name,
       workspace_mode: mode,
     });
-
     if (error) {
       setMessage(error.message);
       return;
     }
-
-    window.location.href = "/app";
+    window.location.href = "/app/email";
   }
 
   if (!ready) {
     return (
-      <main className="wrap">
+      <main className="wrap" style={{ padding: 48 }}>
         <p>{message}</p>
       </main>
     );
   }
 
   return (
-    <main className="wrap">
+    <main className="wrap" style={{ padding: 48 }}>
       <p className="kicker">First run</p>
-      <h1>Name your workspace</h1>
+      <h2>Name your workspace</h2>
       <form className="stack" onSubmit={onSubmit}>
         <label>
           Workspace name
-          <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="Acme Studio" />
+          <input value={name} onChange={(e) => setName(e.target.value)} required />
         </label>
         <label>
           Mode
