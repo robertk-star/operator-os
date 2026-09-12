@@ -1,0 +1,18 @@
+alter table public.contacts
+  add column if not exists first_name text,
+  add column if not exists last_name text,
+  add column if not exists business_name text,
+  add column if not exists job_title text,
+  add column if not exists industry text,
+  add column if not exists tags text[] not null default '{}',
+  add column if not exists source text,
+  add column if not exists email_status text not null default 'unknown',
+  add column if not exists street_address text,
+  add column if not exists city text,
+  add column if not exists state text,
+  add column if not exists postal_code text,
+  add column if not exists country text default 'United States',
+  add column if not exists website text,
+  add column if not exists linkedin_url text,
+  add column if not exists status text not null default 'active',
+  add column if not exists do_not_disturb boolean not null default false;
