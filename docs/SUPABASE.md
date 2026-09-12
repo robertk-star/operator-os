@@ -1,42 +1,38 @@
 # Supabase for OperatorOS
 
-This template uses its own Supabase project. Do not point it at the private RobertOS database.
+Browser-only setup. No local CLI.
 
 ## Project
 
 - Dashboard: https://supabase.com/dashboard/project/crughgiwfhhbnpbzaifm
 - API URL: https://crughgiwfhhbnpbzaifm.supabase.co
 
-## Local and Vercel env
+## Already applied
 
-Copy `.env.example` to `.env.local`.
+1. `supabase/migrations/20260912080000_core_workspace.sql`
+2. Next: run `supabase/migrations/20260912083000_workspace_bootstrap_policies.sql` in the SQL Editor so a signed-in user can create a workspace.
 
-Required:
+## Auth URLs in the dashboard
+
+Authentication → URL Configuration:
+
+- Site URL: your Vercel URL, for example https://operator-os.vercel.app
+- Redirect allow list: https://operator-os.vercel.app/auth/callback
+
+Replace the host with the real Vercel domain after import.
+
+## Vercel env
+
+Project Settings → Environment Variables:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (server only, never shipped to the browser)
+- `SUPABASE_SERVICE_ROLE_KEY` (server only, not required for first-run workspace create)
 
-Get the keys from Project Settings → API.
+## First run in the browser
 
-On Vercel, add the same three values to the `operator-os` project after Git is linked.
-
-## Apply schema
-
-1. Open SQL Editor in the dashboard.
-2. Paste and run `supabase/migrations/20260912080000_core_workspace.sql`.
-3. Confirm tables exist under Table Editor.
-
-Or use the CLI:
-
-```bash
-npx supabase db push --project-ref crughgiwfhhbnpbzaifm
-```
-
-## Rules
-
-- One workspace is the tenant.
-- Every core row has `workspace_id`.
-- RLS allows members of that workspace only.
-- Service role is for server routes and first-run provisioning only.
-- Packs add tables later. They do not reuse RobertOS vertical tables.
+1. Open the Vercel URL.
+2. Sign in / create account.
+3. Confirm email if Supabase asks.
+4. Name the workspace (solo or team).
+5. Land on /app.

@@ -15,6 +15,29 @@ body {
 }
 a { color: inherit; }
 .wrap { max-width: 720px; margin: 0 auto; padding: 64px 24px; }
-.kicker { letter-spacing: 0.12em; text-transform: uppercase; font-size: 12px; font-family: ui-sans-serif, system-ui, sans-serif; }
+.kicker {
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
 h1 { font-size: 42px; font-weight: 500; margin: 12px 0 16px; }
-.modules { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; padding: 0; list-style: none; }
+.modules {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 24px;
+  padding: 0;
+  list-style: none;
+}
+.stack { display: flex; flex-direction: column; gap: 16px; max-width: 420px; }
+.row { display: flex; gap: 12px; }
+label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+input, select, button {
+  font: inherit;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+}
+button { cursor: pointer; }
+button.secondary { background: transparent; }

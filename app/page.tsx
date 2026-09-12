@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 const modules = [
   "Tasks",
   "Notes",
@@ -18,6 +20,9 @@ export default function HomePage() {
       <p>
         A reusable operating system for solo operators and small teams.
         Industry workflows are optional packs. Core stays generic.
+      </p>
+      <p>
+        <Link href="/login">Sign in to your workspace</Link>
       </p>
       <p>Day-one modules</p>
       <ul className="modules">
