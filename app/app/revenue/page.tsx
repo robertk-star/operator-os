@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
+import { LeadFinder } from "./LeadFinder";
 import { RevenueBoard } from "./RevenueBoard";
 
 export default async function RevenuePage({
@@ -27,8 +28,8 @@ export default async function RevenuePage({
     <section className="main">
       <p className="kicker">Revenue Engine</p>
       <h2>Revenue Engine</h2>
-      <p className="meta">Universal pipeline. Targets come from Settings, not from a fixed industry list.</p>
-      {targets ? <p className="meta">Current targets: {targets}</p> : <p className="meta">Set target company types in Settings first.</p>}
+      <p className="meta">Find companies from your targets, save them as leads, then work the pipeline.</p>
+      <LeadFinder workspaceId={workspace?.id || ""} defaultQuery={targets} />
       <RevenueBoard
         workspaceId={workspace?.id || ""}
         initialOpportunities={opportunities || []}
