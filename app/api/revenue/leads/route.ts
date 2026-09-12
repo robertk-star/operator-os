@@ -28,11 +28,18 @@ function normalizeEmployeeRanges(value: string | undefined) {
       for (const item of DEFAULT_1000_PLUS) if (!ranges.includes(item)) ranges.push(item);
       continue;
     }
-    if (/^\d+,\d+$/.test(token) || /^\d{2,}\+$/.test(token)) {
-      ranges.push(token);
-    }
+    if (/^\d+,\d+$/.test(token) || /^\d{2,}\+$/.test(token)) ranges.push(token);
   }
   return ranges.length ? [...new Set(ranges)] : DEFAULT_1000_PLUS;
+}
+
+function domainOf(value: string) {
+  try {
+    const url = value.startsWith("http") ? value : `https://${value}`;
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return value.replace(/^www\./, "").toLowerCase();
+  }
 }
 
 export async function GET(request: Request) {
@@ -41,13 +48,14 @@ export async function GET(request: Request) {
   const workspace = await getCurrentWorkspace();
   if (!workspace) return NextResponse.json({ query: "", items: [] }, { status: 401 });
 
-  const { data } = await supabase
-    .from("integrations")
-    .select("metadata")
-    .eq("workspace_id", workspace.id)
-    .eq("provider", "workspace")
-    .maybeSingle();
-  const settings = (data?.metadata || {}) as Settings;
+  const [{ data: settingsRow }, { data: savedOrgs }] = await Promise.all([
+    supabase.from("integrations").select("metadata").eq("workspace_id", workspace.id).eq("provider", "workspace").maybeSingle(),
+    supabase.from("organizations").select("name, domain").eq("workspace_id", workspace.id),
+  ]);
+  const settings = (settingsRow?.metadata || {}) as Settings;
+  const savedNames = new Set((savedOrgs || []).map((org) => org.name.trim().toLowerCase()));
+  const savedDomains = new Set((savedOrgs || []).map((org) => (org.domain || "").replace(/^www\./, "").toLowerCase()).filter(Boolean));
+
   const locations = splitList(settings.locations);
   const ranges = normalizeEmployeeRanges(settings.employeeRanges);
   const industries = splitList(settings.industries);
@@ -56,11 +64,9 @@ export async function GET(request: Request) {
   const filters = { locations, employeeRanges: ranges, industries, keywords };
 
   const key = process.env.APOLLO_API_KEY;
-  if (!key) {
-    return NextResponse.json({ source: "none", items: [], error: "APOLLO_API_KEY missing.", filters });
-  }
+  if (!key) return NextResponse.json({ source: "none", items: [], error: "APOLLO_API_KEY missing.", filters });
 
-  const body: Record<string, unknown> = { page: 1, per_page: 10 };
+  const body: Record<string, unknown> = { page: 1, per_page: 100 };
   if (locations.length) body.organization_locations = locations;
   if (ranges.length) body.organization_num_employees_ranges = ranges;
   if (tags.length) body.q_organization_keyword_tags = tags;
@@ -82,26 +88,41 @@ export async function GET(request: Request) {
       items: [],
       error: payload.error || payload.message || JSON.stringify(payload),
       filters,
-      sent: body,
     });
   }
 
   const organizations = payload.organizations || payload.accounts || [];
-  const items = organizations.map((org: any) => ({
-    name: org.name || "Unknown company",
-    url: org.website_url || org.primary_domain || "",
-    snippet: [org.short_description, org.industry, org.estimated_num_employees ? `${org.estimated_num_employees} employees` : ""]
-      .filter(Boolean)
-      .join(" · "),
-    employees: org.estimated_num_employees ? String(org.estimated_num_employees) : "",
-    location: [org.city, org.state, org.country].filter(Boolean).join(", "),
-    source: "apollo",
-  }));
+  const items = organizations
+    .map((org: any) => {
+      const url = org.website_url || org.primary_domain || "";
+      const domain = domainOf(url || org.primary_domain || "");
+      return {
+        name: org.name || "Unknown company",
+        url,
+        domain,
+        snippet: [org.short_description, org.industry].filter(Boolean).join(" · "),
+        employees: org.estimated_num_employees ? String(org.estimated_num_employees) : "",
+        location: [org.city, org.state, org.country].filter(Boolean).join(", "),
+        source: "apollo",
+      };
+    })
+    .filter((item: { name: string; domain: string }) => {
+      if (savedNames.has(item.name.trim().toLowerCase())) return false;
+      if (item.domain && savedDomains.has(item.domain)) return false;
+      return true;
+    });
 
+  const skipped = organizations.length - items.length;
   return NextResponse.json({
     source: "apollo",
     items,
-    error: items.length ? "" : "Apollo returned no companies for those filters.",
+    error: items.length
+      ? ""
+      : skipped
+        ? "Apollo returned companies, but all of them are already saved."
+        : "Apollo returned no companies for those filters.",
     filters,
+    skipped,
+    fetched: organizations.length,
   });
 }
