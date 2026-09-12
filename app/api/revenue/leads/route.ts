@@ -7,6 +7,7 @@ type Settings = {
   employeeRanges?: string;
   keywords?: string;
   industries?: string;
+  apolloCompanyPage?: number;
 };
 
 const DEFAULT_1000_PLUS = ["1001,5000", "5001,10000", "10001+"];
@@ -43,30 +44,34 @@ function domainOf(value: string) {
 }
 
 export async function GET(request: Request) {
-  const requested = new URL(request.url).searchParams.get("q")?.trim();
+  const url = new URL(request.url);
+  const requested = url.searchParams.get("q")?.trim();
+  const requestedPage = Number(url.searchParams.get("page") || "0");
   const supabase = await createSupabaseServerClient();
   const workspace = await getCurrentWorkspace();
   if (!workspace) return NextResponse.json({ query: "", items: [] }, { status: 401 });
 
   const [{ data: settingsRow }, { data: savedOrgs }] = await Promise.all([
     supabase.from("integrations").select("metadata").eq("workspace_id", workspace.id).eq("provider", "workspace").maybeSingle(),
-    supabase.from("organizations").select("name, domain").eq("workspace_id", workspace.id),
+    supabase.from("organizations").select("name, domain, apollo_organization_id").eq("workspace_id", workspace.id),
   ]);
   const settings = (settingsRow?.metadata || {}) as Settings;
-  const savedNames = new Set((savedOrgs || []).map((org) => org.name.trim().toLowerCase()));
+  const page = requestedPage > 0 ? Math.min(requestedPage, 500) : Number(settings.apolloCompanyPage || 1);
+  const savedNames = new Set((savedOrgs || []).map((org) => (org.name || "").trim().toLowerCase()));
   const savedDomains = new Set((savedOrgs || []).map((org) => (org.domain || "").replace(/^www\./, "").toLowerCase()).filter(Boolean));
+  const savedApollo = new Set((savedOrgs || []).map((org) => org.apollo_organization_id).filter(Boolean));
 
   const locations = splitList(settings.locations);
   const ranges = normalizeEmployeeRanges(settings.employeeRanges);
   const industries = splitList(settings.industries);
   const keywords = splitList(requested || settings.keywords);
   const tags = [...industries, ...keywords];
-  const filters = { locations, employeeRanges: ranges, industries, keywords };
+  const filters = { locations, employeeRanges: ranges, industries, keywords, page };
 
   const key = process.env.APOLLO_API_KEY;
   if (!key) return NextResponse.json({ source: "none", items: [], error: "APOLLO_API_KEY missing.", filters });
 
-  const body: Record<string, unknown> = { page: 1, per_page: 100 };
+  const body: Record<string, unknown> = { page, per_page: 100 };
   if (locations.length) body.organization_locations = locations;
   if (ranges.length) body.organization_num_employees_ranges = ranges;
   if (tags.length) body.q_organization_keyword_tags = tags;
@@ -94,35 +99,45 @@ export async function GET(request: Request) {
   const organizations = payload.organizations || payload.accounts || [];
   const items = organizations
     .map((org: any) => {
-      const url = org.website_url || org.primary_domain || "";
-      const domain = domainOf(url || org.primary_domain || "");
+      const site = org.website_url || org.primary_domain || "";
       return {
+        id: org.id || org.organization_id || "",
         name: org.name || "Unknown company",
-        url,
-        domain,
+        url: site,
+        domain: domainOf(site || org.primary_domain || ""),
         snippet: [org.short_description, org.industry].filter(Boolean).join(" · "),
         employees: org.estimated_num_employees ? String(org.estimated_num_employees) : "",
         location: [org.city, org.state, org.country].filter(Boolean).join(", "),
         source: "apollo",
       };
     })
-    .filter((item: { name: string; domain: string }) => {
+    .filter((item: { id: string; name: string; domain: string }) => {
+      if (item.id && savedApollo.has(item.id)) return false;
       if (savedNames.has(item.name.trim().toLowerCase())) return false;
       if (item.domain && savedDomains.has(item.domain)) return false;
       return true;
     });
 
+  await supabase.from("integrations").upsert(
+    {
+      workspace_id: workspace.id,
+      provider: "workspace",
+      status: "connected",
+      metadata: { ...settings, apolloCompanyPage: page },
+    },
+    { onConflict: "workspace_id,provider" }
+  );
+
   const skipped = organizations.length - items.length;
+  const nextPage = organizations.length ? page + 1 : page;
   return NextResponse.json({
     source: "apollo",
     items,
-    error: items.length
-      ? ""
-      : skipped
-        ? "Apollo returned companies, but all of them are already saved."
-        : "Apollo returned no companies for those filters.",
+    error: items.length ? "" : skipped ? "This page was all companies you already saved. Use Next 100 for a new page." : "Apollo returned no companies for those filters.",
     filters,
     skipped,
     fetched: organizations.length,
+    page,
+    nextPage,
   });
 }
