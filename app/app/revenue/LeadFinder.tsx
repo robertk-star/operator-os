@@ -22,10 +22,16 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
     setBusy(false);
     setItems(payload.items || []);
     setSource(payload.source || "");
-    const filters = payload.filters
-      ? `Locations: ${(payload.filters.locations || []).join(", ") || "none"}. Sizes sent: ${(payload.filters.employeeRanges || []).join("; ") || "none"}.`
-      : "";
-    setMessage([payload.source ? `Source: ${payload.source}` : "", payload.error, filters].filter(Boolean).join(" "));
+    setMessage(
+      [
+        payload.source ? `Source: ${payload.source}` : "",
+        payload.fetched != null ? `Fetched ${payload.fetched}` : "",
+        payload.skipped ? `skipped ${payload.skipped} already saved` : "",
+        payload.error || "",
+      ]
+        .filter(Boolean)
+        .join(". ")
+    );
   }
 
   async function saveLead(lead: Lead) {
@@ -73,7 +79,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
   return (
     <div className="stack wide">
       <p className="meta">
-        Filters come from <Link href="/app/settings">Settings</Link>. Change them there, not in code.
+        Filters come from <Link href="/app/settings">Settings</Link>. One click uses one Apollo page of up to 100 companies.
       </p>
       <form className="stack" onSubmit={findLeads}>
         <label>
@@ -91,11 +97,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
           <li key={`${item.name}-${item.url}`}>
             <div>
               <strong>{item.name}</strong>
-              <div className="meta">
-                {[item.source || source, item.location, item.employees ? `${item.employees} employees` : "headcount not in this payload", item.url]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </div>
+              <div className="meta">{[item.source || source, item.location, item.url].filter(Boolean).join(" · ")}</div>
               <p>{item.snippet}</p>
             </div>
             <button type="button" onClick={() => saveLead(item)}>
