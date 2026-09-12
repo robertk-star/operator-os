@@ -101,6 +101,28 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     setMessage("Saved.");
   }
 
+  async function archive() {
+    if (!selected) return;
+    const next = selected.status === "archived" ? "active" : "archived";
+    await save({ status: next });
+    if (next === "archived") setSummary("archived");
+  }
+
+  async function remove() {
+    if (!selected) return;
+    if (!window.confirm(`Delete ${displayName(selected)}? This cannot be undone.`)) return;
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase.from("contacts").delete().eq("id", selected.id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    const remaining = contacts.filter((item) => item.id !== selected.id);
+    setContacts(remaining);
+    setSelectedId(remaining[0]?.id || "");
+    setMessage("Deleted.");
+  }
+
   async function createContact() {
     const supabase = createSupabaseBrowserClient();
     const { data, error } = await supabase
@@ -191,15 +213,17 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
                   <a href={selected.website.startsWith("http") ? selected.website : `https://${selected.website}`} target="_blank" rel="noreferrer">{selected.website}</a>
                 </p>
               ) : null}
+              <div className="row">
+                <button type="button" className="chip" onClick={() => void archive()}>
+                  {selected.status === "archived" ? "Restore" : "Archive"}
+                </button>
+                <button type="button" className="chip" onClick={() => void remove()}>Delete</button>
+              </div>
               <ResearchButton
                 contactId={selected.id}
                 notes={selected.research_notes}
                 onDone={(notes, extra) => {
-                  setContacts((current) =>
-                    current.map((item) =>
-                      item.id === selected.id ? { ...item, research_notes: notes, ...extra } : item
-                    )
-                  );
+                  setContacts((current) => current.map((item) => (item.id === selected.id ? { ...item, research_notes: notes, ...extra } : item)));
                   setMessage("Research saved.");
                 }}
               />
