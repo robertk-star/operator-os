@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { GOOGLE_USER_SCOPES } from "@/lib/googleAuth";
@@ -14,6 +14,22 @@ function emailFrom(from: string) {
   return match ? match[1] : from;
 }
 
+function searchQueryFromPrompt(prompt: string) {
+  return prompt
+    .replace(/find( an)? emails?/gi, " ")
+    .replace(/containing/gi, " ")
+    .replace(/about/gi, " ")
+    .replace(/search( for)?/gi, " ")
+    .replace(/show me/gi, " ")
+    .replace(/please/gi, " ")
+    .replace(/\bin\b/gi, " ")
+    .replace(/\bit\b/gi, " ")
+    .replace(/\bwith\b/gi, " ")
+    .replace(/\ban\b/gi, " ")
+    .replace(/\bthe\b/gi, " ")
+    .trim();
+}
+
 export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState("disconnected");
@@ -25,13 +41,14 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
   const [selectedId, setSelectedId] = useState("");
   const [error, setError] = useState("");
   const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
   const [compose, setCompose] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [draftStatus, setDraftStatus] = useState("");
   const [turns, setTurns] = useState<Turn[]>([
     {
       role: "assistant",
-      text: "Ask me to summarize unread email, or draft a new email. Results appear on the right. Select one result to reply.",
+      text: "Ask me to summarize unread email, search for a word like SPXC, or draft a new email. Results appear on the right.",
     },
   ]);
 
@@ -79,6 +96,23 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
     ]);
   }
 
+  async function searchMail(prompt: string) {
+    const query = searchQueryFromPrompt(prompt) || prompt;
+    setBusy(true);
+    setTurns((current) => [...current, { role: "user", text: prompt }, { role: "assistant", text: `Searching Gmail for ${query}...` }]);
+    const response = await fetch(`/api/gmail/search?q=${encodeURIComponent(query)}`);
+    const payload = await response.json().catch(() => ({}));
+    setBusy(false);
+    const items = payload.items || [];
+    setResults(items);
+    setResultLabel(`Search: ${query}`);
+    setSelectedId("");
+    const summary = items.length
+      ? items.map((item: MailItem, index: number) => `${index + 1}. ${item.subject}\n    ${item.from}\n    ${item.snippet}`).join("\n\n")
+      : payload.error || `No Gmail results for ${query}.`;
+    setTurns((current) => [...current, { role: "assistant", text: `${summary}\n\nSelect one on the right to reply.` }]);
+  }
+
   function replyTo(item: MailItem) {
     setSelectedId(item.id);
     setCompose(false);
@@ -107,7 +141,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
 
   function ask(text: string) {
     const prompt = text.trim();
-    if (!prompt) return;
+    if (!prompt || busy) return;
     const lower = prompt.toLowerCase();
     if (status !== "connected") {
       setTurns((current) => [...current, { role: "user", text: prompt }, { role: "assistant", text: "Add Gmail first." }]);
@@ -123,17 +157,17 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
       setInput("");
       return;
     }
-    if (lower.includes("draft") && !selected) {
-      startNewEmail();
-      setInput("");
-      return;
-    }
     if (lower.includes("draft") && selected) {
       replyTo(selected);
       setInput("");
       return;
     }
-    setTurns((current) => [...current, { role: "user", text: prompt }, { role: "assistant", text: selected ? `${selected.subject}\n${selected.from}\n${selected.snippet}` : "Search unread first, or draft a new email." }]);
+    if (lower.includes("draft an email") || (lower.includes("draft") && !selected && (lower.includes("new") || lower.includes("send")))) {
+      startNewEmail();
+      setInput("");
+      return;
+    }
+    void searchMail(prompt);
     setInput("");
   }
 
@@ -142,10 +176,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
       setDraftStatus("Add who it is to and what you want to say.");
       return;
     }
-    const payloadDraft = {
-      ...draft,
-      subject: draft.subject.trim() || "(No subject)",
-    };
+    const payloadDraft = { ...draft, subject: draft.subject.trim() || "(No subject)" };
     setDraftStatus("Saving draft in Gmail...");
     const response = await fetch("/api/gmail/drafts", {
       method: "POST",
@@ -216,9 +247,6 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
             <button className="chip" type="button" onClick={startNewEmail}>
               Draft an email
             </button>
-            <button className="chip" type="button" disabled={!selected} onClick={() => selected && replyTo(selected)}>
-              Reply to selected
-            </button>
           </div>
           <form
             className="composer"
@@ -227,8 +255,8 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
               ask(input);
             }}
           >
-            <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about Gmail..." />
-            <button className="send" type="submit" aria-label="Send">
+            <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Find emails containing SPXC" />
+            <button className="send" type="submit" aria-label="Send" disabled={busy}>
               ↑
             </button>
           </form>
@@ -256,10 +284,6 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
               <span>{item.from}</span>
             </button>
           ))}
-        </div>
-        <div className="card">
-          <p className="kicker">Control boundary</p>
-          <p>Search first. Pick one result to reply. New mail asks who and what. Drafts only.</p>
         </div>
       </aside>
     </>
