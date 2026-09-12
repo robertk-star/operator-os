@@ -14,22 +14,32 @@ function cleanUrl(value: string) {
 
 function decode(value: string) {
   return value
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
+    .replace(/&/g, "&")
+    .replace(/"/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
+    .replace(/&#x27;/gi, "'")
+    .replace(/'/g, "'")
+    .replace(/</g, "<")
+    .replace(/>/g, ">")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function strip(html: string) {
-  return decode(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-  );
+function guessIndustry(text: string) {
+  const value = text.toLowerCase();
+  const rules: Array<[RegExp, string]> = [
+    [/staffing|recruit|talent solutions|workforce/, "Staffing & Recruiting"],
+    [/warehous|fulfillment|distribution|logistics|supply chain|freight|trucking/, "Logistics and Supply Chain"],
+    [/manufactur|industrial|factory/, "Manufacturing"],
+    [/retail|wholesale|grocery|store/, "Retail"],
+    [/hospitality|hotel|restaurant/, "Hospitality"],
+    [/construct|building/, "Construction"],
+    [/food production|foodservice|beverage/, "Food Production"],
+    [/marketing|creative agency|advertis/, "Marketing & Advertising"],
+    [/software|saas|technology|digital/, "Information Technology"],
+  ];
+  return rules.find(([pattern]) => pattern.test(value))?.[1] || "";
 }
 
 function emailsIn(text: string) {
@@ -74,7 +84,7 @@ export async function POST(request: Request) {
   const { contactId } = await request.json().catch(() => ({ contactId: "" }));
   const { data: contact } = await supabase
     .from("contacts")
-    .select("id, website, business_name, full_name, linkedin_url, email, organizations(domain)")
+    .select("id, website, business_name, full_name, linkedin_url, email, industry, organizations(domain)")
     .eq("workspace_id", workspace.id)
     .eq("id", contactId)
     .maybeSingle();
@@ -102,9 +112,11 @@ export async function POST(request: Request) {
     linksIn(html, path).forEach((item) => socials.add(item));
   }
 
+  const industry = contact.industry || guessIndustry(`${title} ${description}`);
   const notes = [
     title ? `Title: ${title}` : "",
     description ? `Description: ${description}` : "",
+    industry ? `Industry: ${industry}` : "",
     pages.length ? `Pages read: ${pages.join(", ")}` : "No pages could be fetched.",
     emails.size ? `Emails on site: ${[...emails].join(", ")}` : "No emails found on public pages.",
     socials.size ? `Profiles: ${[...socials].join(", ")}` : "",
@@ -116,6 +128,7 @@ export async function POST(request: Request) {
     research_notes: notes,
     researched_at: new Date().toISOString(),
   };
+  if (industry) patch.industry = industry;
   if (!contact.linkedin_url) {
     const linkedin = [...socials].find((item) => item.includes("linkedin.com"));
     if (linkedin) patch.linkedin_url = linkedin;
@@ -126,8 +139,6 @@ export async function POST(request: Request) {
   }
 
   const { error } = await supabase.from("contacts").update(patch).eq("id", contact.id);
-  if (error) {
-    return NextResponse.json({ notes, warning: error.message });
-  }
+  if (error) return NextResponse.json({ notes, warning: error.message, patch });
   return NextResponse.json({ notes, patch });
 }
