@@ -141,12 +141,7 @@ input, select, textarea.field, button {
 .day em.task { background: #fff8e4; color: #705a20; }
 .day-rail { min-width: 0; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.contacts-desk {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-}
+.contacts-desk { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .contacts-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-shrink: 0; }
 .kpi-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px; margin: 20px 0; flex-shrink: 0; }
 .kpi {
@@ -163,11 +158,7 @@ input, select, textarea.field, button {
   flex: 1;
 }
 .contacts-list,
-.contact-record {
-  min-height: 0;
-  overflow: auto;
-}
-.contacts-list { align-items: stretch; }
+.contact-record { min-height: 0; overflow: auto; }
 .contacts-list input { width: 100%; }
 .contact-record { margin-bottom: 0; }
 .contact-row {
@@ -179,6 +170,13 @@ input, select, textarea.field, button {
   background: white;
   border-radius: 12px;
   text-align: left;
+}
+.contact-row strong,
+.contact-row span,
+.contact-row small,
+.contact-row em {
+  display: block;
+  width: 100%;
 }
 .contact-row.selected { border-color: #17284f; background: #eef3f8; }
 .contact-row em { font-style: normal; font-size: 10px; font-weight: 700; color: #5b6570; }
