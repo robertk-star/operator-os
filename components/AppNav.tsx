@@ -5,6 +5,7 @@ const links = [
   ["Tasks", "/app/tasks"],
   ["Notes", "/app/notes"],
   ["Contacts", "/app/contacts"],
+  ["Relationships", "/app/relationships"],
   ["Revenue", "/app/revenue"],
   ["Settings", "/app/settings"],
 ];
