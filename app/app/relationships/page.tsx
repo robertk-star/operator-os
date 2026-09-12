@@ -1,4 +1,3 @@
-import { AppNav } from "@/components/AppNav";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 import { RelationshipList } from "./RelationshipList";
@@ -11,7 +10,6 @@ export default async function RelationshipsPage({
   const { contact: selectedContactId } = await searchParams;
   const workspace = await getCurrentWorkspace();
   const supabase = await createSupabaseServerClient();
-
   const [{ data: events }, { data: contacts }] = workspace
     ? await Promise.all([
         supabase
@@ -24,16 +22,16 @@ export default async function RelationshipsPage({
     : [{ data: [] }, { data: [] }];
 
   return (
-    <main className="wrap">
-      <AppNav current="/app/relationships" />
-      <p className="kicker">{workspace?.name}</p>
-      <h1>Relationships</h1>
+    <section className="main">
+      <p className="kicker">Relationships</p>
+      <h2>Relationships</h2>
+      <p className="meta">This workspace starts empty. Interactions appear after you log them.</p>
       <RelationshipList
         workspaceId={workspace?.id || ""}
         initialEvents={events || []}
         contacts={contacts || []}
         selectedContactId={selectedContactId || ""}
       />
-    </main>
+    </section>
   );
 }

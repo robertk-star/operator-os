@@ -1,4 +1,3 @@
-import { AppNav } from "@/components/AppNav";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 import { TaskList } from "./TaskList";
@@ -15,11 +14,10 @@ export default async function TasksPage() {
     : { data: [] };
 
   return (
-    <main className="wrap">
-      <AppNav current="/app/tasks" />
-      <p className="kicker">{workspace?.name}</p>
-      <h1>Tasks</h1>
+    <section className="main">
+      <p className="kicker">Tasks</p>
+      <h2>Tasks</h2>
       <TaskList workspaceId={workspace?.id || ""} initialTasks={tasks || []} />
-    </main>
+    </section>
   );
 }

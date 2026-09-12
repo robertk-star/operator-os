@@ -1,4 +1,3 @@
-import { AppNav } from "@/components/AppNav";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 import { RevenueBoard } from "./RevenueBoard";
@@ -6,7 +5,6 @@ import { RevenueBoard } from "./RevenueBoard";
 export default async function RevenuePage() {
   const workspace = await getCurrentWorkspace();
   const supabase = await createSupabaseServerClient();
-
   const [{ data: opportunities }, { data: contacts }] = workspace
     ? await Promise.all([
         supabase
@@ -19,15 +17,11 @@ export default async function RevenuePage() {
     : [{ data: [] }, { data: [] }];
 
   return (
-    <main className="wrap">
-      <AppNav current="/app/revenue" />
-      <p className="kicker">{workspace?.name}</p>
-      <h1>Revenue</h1>
-      <RevenueBoard
-        workspaceId={workspace?.id || ""}
-        initialOpportunities={opportunities || []}
-        contacts={contacts || []}
-      />
-    </main>
+    <section className="main">
+      <p className="kicker">Revenue Engine</p>
+      <h2>Revenue Engine</h2>
+      <p className="meta">Universal pipeline. Target company types will live in Settings, not in this screen.</p>
+      <RevenueBoard workspaceId={workspace?.id || ""} initialOpportunities={opportunities || []} contacts={contacts || []} />
+    </section>
   );
 }

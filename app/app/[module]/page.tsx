@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 export default async function ModulePage({
   params,
 }: {
@@ -7,14 +5,11 @@ export default async function ModulePage({
 }) {
   const { module } = await params;
   const title = module.replace(/-/g, " ");
-
   return (
-    <main className="wrap">
-      <p className="kicker">
-        <Link href="/app">Back</Link>
-      </p>
-      <h1>{title}</h1>
-      <p>Shell is in place. Records for this module come next.</p>
-    </main>
+    <section className="main">
+      <p className="kicker">{title}</p>
+      <h2>{title}</h2>
+      <p className="meta">This RobertOS module is on the OperatorOS map. The full workspace screen ports next.</p>
+    </section>
   );
 }

@@ -1,4 +1,3 @@
-import { AppNav } from "@/components/AppNav";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 import { ContactList } from "./ContactList";
@@ -6,7 +5,6 @@ import { ContactList } from "./ContactList";
 export default async function ContactsPage() {
   const workspace = await getCurrentWorkspace();
   const supabase = await createSupabaseServerClient();
-
   const [{ data: contacts }, { data: organizations }] = workspace
     ? await Promise.all([
         supabase
@@ -19,15 +17,11 @@ export default async function ContactsPage() {
     : [{ data: [] }, { data: [] }];
 
   return (
-    <main className="wrap">
-      <AppNav current="/app/contacts" />
-      <p className="kicker">{workspace?.name}</p>
-      <h1>Contacts</h1>
-      <ContactList
-        workspaceId={workspace?.id || ""}
-        initialContacts={contacts || []}
-        organizations={organizations || []}
-      />
-    </main>
+    <section className="main">
+      <p className="kicker">Contacts</p>
+      <h2>Contacts</h2>
+      <p className="meta">This workspace starts empty. Add people as you work.</p>
+      <ContactList workspaceId={workspace?.id || ""} initialContacts={contacts || []} organizations={organizations || []} />
+    </section>
   );
 }

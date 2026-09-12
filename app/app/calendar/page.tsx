@@ -1,4 +1,3 @@
-import { AppNav } from "@/components/AppNav";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 import { CalendarBoard } from "./CalendarBoard";
@@ -15,12 +14,11 @@ export default async function CalendarPage() {
     : { data: [] };
 
   return (
-    <main className="wrap">
-      <AppNav current="/app/calendar" />
-      <p className="kicker">{workspace?.name}</p>
-      <h1>Calendar</h1>
-      <p className="meta">Workspace calendar. Google Calendar sync comes after OAuth keys are added.</p>
+    <section className="main">
+      <p className="kicker">Calendar</p>
+      <h2>Calendar</h2>
+      <p className="meta">Workspace calendar. Google Calendar sync uses the same OAuth connection as Gmail, when that is added.</p>
       <CalendarBoard workspaceId={workspace?.id || ""} initialEvents={events || []} />
-    </main>
+    </section>
   );
 }
