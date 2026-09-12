@@ -3,11 +3,12 @@
 import { FormEvent, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type Lead = { name: string; url: string; snippet: string };
+type Lead = { name: string; url: string; snippet: string; employees?: string; location?: string; source?: string };
 
 export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string; defaultQuery: string }) {
-  const [query, setQuery] = useState(defaultQuery);
+  const [query, setQuery] = useState(defaultQuery || "US companies with 750 or more employees");
   const [items, setItems] = useState<Lead[]>([]);
+  const [source, setSource] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -19,14 +20,15 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
     const payload = await response.json().catch(() => ({}));
     setBusy(false);
     setItems(payload.items || []);
-    setMessage(payload.error || (payload.items?.length ? "" : "No companies found for that target."));
+    setSource(payload.source || "");
+    setMessage(payload.error || (payload.items?.length ? `Source: ${payload.source}` : "No companies found."));
   }
 
   async function saveLead(lead: Lead) {
     const supabase = createSupabaseBrowserClient();
     const domain = (() => {
       try {
-        return new URL(lead.url).hostname.replace(/^www\./, "");
+        return lead.url ? new URL(lead.url.startsWith("http") ? lead.url : `https://${lead.url}`).hostname.replace(/^www\./, "") : null;
       } catch {
         return null;
       }
@@ -66,7 +68,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
       return;
     }
     setMessage(`Saved ${lead.name} as a contact and new opportunity.`);
-    setItems((current) => current.filter((item) => item.url !== lead.url));
+    setItems((current) => current.filter((item) => item.url !== lead.url || item.name !== lead.name));
   }
 
   return (
@@ -74,19 +76,21 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
       <form className="stack" onSubmit={findLeads}>
         <label>
           What are you looking for?
-          <textarea className="field" rows={4} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Industries, company size, geography, keywords" />
+          <textarea className="field" rows={4} value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
+        <p className="meta">Apollo company search: United States, 501+ employee buckets (covers 750+). People search is not on the Free plan.</p>
         <button type="submit" disabled={busy}>
-          {busy ? "Finding leads..." : "Find leads"}
+          {busy ? "Finding companies..." : "Find companies"}
         </button>
       </form>
       {message ? <p className="meta">{message}</p> : null}
+      {source ? <p className="meta">Source: {source}</p> : null}
       <ul className="record-list">
         {items.map((item) => (
-          <li key={item.url}>
+          <li key={`${item.name}-${item.url}`}>
             <div>
               <strong>{item.name}</strong>
-              <div className="meta">{item.url}</div>
+              <div className="meta">{[item.location, item.employees ? `${item.employees} employees` : "", item.url].filter(Boolean).join(" · ")}</div>
               <p>{item.snippet}</p>
             </div>
             <button type="button" onClick={() => saveLead(item)}>
