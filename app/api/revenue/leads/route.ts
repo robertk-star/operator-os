@@ -10,18 +10,42 @@ type Settings = {
   industries?: string;
 };
 
-function splitList(value: string | undefined, separators = /[;,\n]/) {
+const DEFAULT_1000_PLUS = ["1001,5000", "5001,10000", "10001+"];
+
+function splitList(value: string | undefined) {
   return String(value || "")
-    .split(separators)
+    .split(/[;,\n]/)
     .map((part) => part.trim())
     .filter(Boolean);
 }
 
-function splitRanges(value: string | undefined) {
-  return String(value || "")
-    .split(/[;\n]/)
-    .map((part) => part.trim().replace(/\s/g, ""))
-    .filter(Boolean);
+function normalizeEmployeeRanges(value: string | undefined) {
+  const raw = String(value || "").trim();
+  if (!raw) return [];
+  if (/^1000\+?$/i.test(raw.replace(/\s/g, "")) || /1000\+/.test(raw) && !raw.includes(",")) {
+    return DEFAULT_1000_PLUS;
+  }
+  const tokens = raw.split(/[;\n]/).map((part) => part.trim().replace(/\s/g, "")).filter(Boolean);
+  const ranges: string[] = [];
+  for (const token of tokens) {
+    if (/^\d+,\d+$/.test(token) || /^\d+\+$/.test(token)) {
+      if (token === "1000+" || token === "1000") {
+        for (const item of DEFAULT_1000_PLUS) if (!ranges.includes(item)) ranges.push(item);
+        continue;
+      }
+      ranges.push(token);
+      continue;
+    }
+    if (/^\d+$/.test(token)) {
+      const n = Number(token);
+      if (n >= 10000) ranges.push("10001+");
+      else if (n >= 5000) ranges.push("5001,10000", "10001+");
+      else if (n >= 1000) {
+        for (const item of DEFAULT_1000_PLUS) if (!ranges.includes(item)) ranges.push(item);
+      }
+    }
+  }
+  return [...new Set(ranges)];
 }
 
 function decode(value: string) {
@@ -56,14 +80,7 @@ function parseDuckDuckGo(html: string) {
 }
 
 async function searchWeb(settings: Settings, overrideQuery: string) {
-  const parts = [
-    overrideQuery,
-    settings.industries,
-    settings.keywords,
-    settings.locations,
-    settings.employeeRanges ? `${settings.employeeRanges} employees` : "",
-    "companies",
-  ].filter(Boolean);
+  const parts = [overrideQuery, settings.industries, settings.keywords, settings.locations, "companies 1000+ employees"].filter(Boolean);
   const query = parts.join(" ");
   const response = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
     headers: { "User-Agent": "OperatorOS/0.1" },
@@ -74,16 +91,16 @@ async function searchWeb(settings: Settings, overrideQuery: string) {
 
 async function searchApollo(settings: Settings, overrideQuery: string) {
   const key = process.env.APOLLO_API_KEY;
-  if (!key) return { items: [], error: "APOLLO_API_KEY is missing in Vercel." };
+  if (!key) return { items: [], error: "APOLLO_API_KEY is missing in Vercel.", ranges: [] as string[] };
 
   const locations = splitList(settings.locations);
-  const ranges = splitRanges(settings.employeeRanges);
+  const ranges = normalizeEmployeeRanges(settings.employeeRanges);
   const industries = splitList(settings.industries);
   const keywords = splitList(overrideQuery || settings.keywords);
   const tags = [...industries, ...keywords];
 
   if (!locations.length && !ranges.length && !tags.length) {
-    return { items: [], error: "Set locations, employee ranges, industries, or keywords in Settings first." };
+    return { items: [], error: "Set locations, employee ranges, industries, or keywords in Settings first.", ranges };
   }
 
   const body: Record<string, unknown> = { page: 1, per_page: 10 };
@@ -102,7 +119,7 @@ async function searchApollo(settings: Settings, overrideQuery: string) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    return { items: [], error: payload.error || payload.message || `Apollo returned ${response.status}.` };
+    return { items: [], error: payload.error || payload.message || `Apollo returned ${response.status}.`, ranges };
   }
   const organizations = payload.organizations || payload.accounts || [];
   const items = organizations.map((org: any) => ({
@@ -115,7 +132,7 @@ async function searchApollo(settings: Settings, overrideQuery: string) {
     location: [org.city, org.state, org.country].filter(Boolean).join(", "),
     source: "apollo",
   }));
-  return { items, error: items.length ? "" : "Apollo returned no companies for your Settings filters." };
+  return { items, error: items.length ? "" : "Apollo returned no companies for your Settings filters.", ranges };
 }
 
 export async function GET(request: Request) {
@@ -131,14 +148,14 @@ export async function GET(request: Request) {
     .eq("provider", "workspace")
     .maybeSingle();
   const settings = (data?.metadata || {}) as Settings;
+  const apollo = await searchApollo(settings, requested || "");
   const filters = {
     locations: splitList(settings.locations),
-    employeeRanges: splitRanges(settings.employeeRanges),
+    employeeRanges: apollo.ranges.length ? apollo.ranges : normalizeEmployeeRanges(settings.employeeRanges),
     industries: splitList(settings.industries),
     keywords: splitList(requested || settings.keywords),
   };
 
-  const apollo = await searchApollo(settings, requested || "");
   if (apollo.items.length) {
     return NextResponse.json({
       query: requested || settings.keywords || settings.industries || "",
