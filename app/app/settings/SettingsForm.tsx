@@ -10,6 +10,7 @@ export function SettingsForm({
   locations,
   employeeRanges,
   keywords,
+  industries,
 }: {
   workspaceId: string;
   workspaceName: string;
@@ -17,12 +18,14 @@ export function SettingsForm({
   locations: string;
   employeeRanges: string;
   keywords: string;
+  industries: string;
 }) {
   const [name, setName] = useState(workspaceName);
   const [targets, setTargets] = useState(revenueTargets);
   const [locationValue, setLocationValue] = useState(locations);
   const [rangeValue, setRangeValue] = useState(employeeRanges);
   const [keywordValue, setKeywordValue] = useState(keywords);
+  const [industryValue, setIndustryValue] = useState(industries);
   const [message, setMessage] = useState("");
 
   async function save(event: FormEvent) {
@@ -39,6 +42,7 @@ export function SettingsForm({
           locations: locationValue,
           employeeRanges: rangeValue,
           keywords: keywordValue,
+          industries: industryValue,
         },
       },
       { onConflict: "workspace_id,provider" }
@@ -47,7 +51,7 @@ export function SettingsForm({
       setMessage(nameResult.error?.message || settingsResult.error?.message || "Could not save.");
       return;
     }
-    setMessage("Saved. Revenue Engine will use these filters on the next Find companies.");
+    setMessage("Saved. Find companies will use these filters.");
   }
 
   return (
@@ -58,34 +62,31 @@ export function SettingsForm({
       </label>
       <label>
         Locations
-        <input
-          value={locationValue}
-          onChange={(e) => setLocationValue(e.target.value)}
-          placeholder="United States, Texas"
-        />
+        <input value={locationValue} onChange={(e) => setLocationValue(e.target.value)} placeholder="United States" />
       </label>
       <label>
         Employee ranges
-        <input
-          value={rangeValue}
-          onChange={(e) => setRangeValue(e.target.value)}
-          placeholder="501,1000; 1001,5000; 5001,10000; 10001+"
-        />
+        <input value={rangeValue} onChange={(e) => setRangeValue(e.target.value)} placeholder="1001,5000; 5001,10000; 10001+" />
       </label>
-      <p className="meta">Apollo ranges use min,max. Separate ranges with a semicolon. Example for 750+: 501,1000; 1001,5000; 5001,10000; 10001+</p>
+      <p className="meta">Apollo ranges use min,max separated by semicolons.</p>
       <label>
-        Keywords
-        <input value={keywordValue} onChange={(e) => setKeywordValue(e.target.value)} placeholder="employee benefits, HR" />
-      </label>
-      <label>
-        Notes / qualified definition
+        Industries
         <textarea
           className="field"
           rows={4}
-          value={targets}
-          onChange={(e) => setTargets(e.target.value)}
-          placeholder="What a good account looks like"
+          value={industryValue}
+          onChange={(e) => setIndustryValue(e.target.value)}
+          placeholder="Warehousing; Transportation/Trucking/Railroad; Wholesale; Retail; Food Production; Hospitality; Construction; Manufacturing"
         />
+      </label>
+      <p className="meta">Use Apollo industry names when you can. Separate with semicolons.</p>
+      <label>
+        Keywords
+        <input value={keywordValue} onChange={(e) => setKeywordValue(e.target.value)} placeholder="warehouse, distribution, fulfillment, hourly" />
+      </label>
+      <label>
+        Notes / qualified definition
+        <textarea className="field" rows={4} value={targets} onChange={(e) => setTargets(e.target.value)} />
       </label>
       <button type="submit">Save settings</button>
       {message ? <p>{message}</p> : null}

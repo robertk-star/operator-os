@@ -13,6 +13,7 @@ export default async function SettingsPage() {
     locations?: string;
     employeeRanges?: string;
     keywords?: string;
+    industries?: string;
   };
   return (
     <section className="main">
@@ -25,6 +26,7 @@ export default async function SettingsPage() {
         locations={metadata.locations || ""}
         employeeRanges={metadata.employeeRanges || ""}
         keywords={metadata.keywords || ""}
+        industries={metadata.industries || ""}
       />
     </section>
   );
