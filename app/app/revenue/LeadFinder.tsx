@@ -4,11 +4,12 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-type Lead = { name: string; url: string; snippet: string; employees?: string; location?: string };
+type Lead = { name: string; url: string; snippet: string; employees?: string; location?: string; source?: string };
 
 export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string; defaultQuery: string }) {
   const [query, setQuery] = useState(defaultQuery);
   const [items, setItems] = useState<Lead[]>([]);
+  const [source, setSource] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -16,14 +17,15 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
     event?.preventDefault();
     setBusy(true);
     setMessage("");
-    const response = await fetch(`/api/revenue/leads?q=${encodeURIComponent(query)}`);
+    const response = await fetch(`/api/revenue/leads?q=${encodeURIComponent(query)}&t=${Date.now()}`);
     const payload = await response.json().catch(() => ({}));
     setBusy(false);
     setItems(payload.items || []);
+    setSource(payload.source || "");
     const filters = payload.filters
-      ? `Locations: ${(payload.filters.locations || []).join(", ") || "none"}. Sizes: ${(payload.filters.employeeRanges || []).join("; ") || "none"}.`
+      ? `Locations: ${(payload.filters.locations || []).join(", ") || "none"}. Sizes sent: ${(payload.filters.employeeRanges || []).join("; ") || "none"}.`
       : "";
-    setMessage(payload.error || filters || (payload.items?.length ? "" : "No companies found."));
+    setMessage([payload.source ? `Source: ${payload.source}` : "", payload.error, filters].filter(Boolean).join(" "));
   }
 
   async function saveLead(lead: Lead) {
@@ -83,12 +85,17 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
         </button>
       </form>
       {message ? <p className="meta">{message}</p> : null}
+      {source === "web" ? <p className="meta">These are website results, not Apollo.</p> : null}
       <ul className="record-list">
         {items.map((item) => (
           <li key={`${item.name}-${item.url}`}>
             <div>
               <strong>{item.name}</strong>
-              <div className="meta">{[item.location, item.employees ? `${item.employees} employees` : "", item.url].filter(Boolean).join(" · ")}</div>
+              <div className="meta">
+                {[item.source || source, item.location, item.employees ? `${item.employees} employees` : "headcount not in this payload", item.url]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </div>
               <p>{item.snippet}</p>
             </div>
             <button type="button" onClick={() => saveLead(item)}>
