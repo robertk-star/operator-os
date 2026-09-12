@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const STARTERS = [
   "Summarize any unread emails that need my attention.",
@@ -10,7 +11,8 @@ const STARTERS = [
 
 type Turn = { role: "assistant" | "user"; text: string };
 
-export function GmailWorkspace() {
+export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
+  const [connected, setConnected] = useState(false);
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([
     {
@@ -19,17 +21,35 @@ export function GmailWorkspace() {
     },
   ]);
 
+  useEffect(() => {
+    if (!workspaceId) return;
+    const supabase = createSupabaseBrowserClient();
+    supabase
+      .from("integrations")
+      .select("status")
+      .eq("workspace_id", workspaceId)
+      .eq("provider", "gmail")
+      .maybeSingle()
+      .then(({ data }) => setConnected(data?.status === "connected" || data?.status === "pending"));
+  }, [workspaceId]);
+
+  async function markConnect() {
+    if (!workspaceId) return;
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase.from("integrations").upsert(
+      { workspace_id: workspaceId, provider: "gmail", status: "pending", metadata: { requested_at: new Date().toISOString() } },
+      { onConflict: "workspace_id,provider" }
+    );
+    if (!error) setConnected(true);
+  }
+
   function ask(text: string) {
     const prompt = text.trim();
     if (!prompt) return;
-    setTurns((current) => [
-      ...current,
-      { role: "user", text: prompt },
-      {
-        role: "assistant",
-        text: "Gmail is in safe mode. Inbox sync is not connected on this workspace yet, so I will not invent mail. When Google OAuth is connected, I can summarize unread mail and prepare drafts. I will not send until you approve.",
-      },
-    ]);
+    const reply = connected
+      ? "Safe mode is on. Gmail OAuth keys are not in this OperatorOS project yet, so I will not invent inbox contents or send mail. I can prepare a draft from what you type. Nothing is sent until you approve."
+      : "Gmail is not connected. Use Connect Gmail in the right rail. Until OAuth is live I will not invent mail or send anything.";
+    setTurns((current) => [...current, { role: "user", text: prompt }, { role: "assistant", text: reply }]);
     setInput("");
   }
 
@@ -61,35 +81,27 @@ export function GmailWorkspace() {
             ))}
           </div>
           <form className="composer" onSubmit={onSubmit}>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about Gmail or request a draft..."
-            />
+            <textarea value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about Gmail or request a draft..." />
             <button className="send" type="submit" aria-label="Send">
               ↑
             </button>
           </form>
-          <p className="meta">Specialist handoffs and Gmail drafts require approval.</p>
         </div>
       </section>
       <aside className="rail">
         <div className="card">
+          <p className="kicker">Gmail connection</p>
+          <p>{connected ? "Connect requested. Add Google OAuth keys in Vercel to finish inbox sync." : "Not connected."}</p>
+          {!connected ? (
+            <button type="button" className="chip" onClick={markConnect}>
+              Connect Gmail
+            </button>
+          ) : null}
+        </div>
+        <div className="card">
           <p className="kicker">Control boundary</p>
           <p>Handoffs propose only. You approve.</p>
-          <p className="meta">Research and analysis</p>
-          <p className="meta">One-hop handoff proposals</p>
           <p className="meta">Email is never sent</p>
-        </div>
-        <div className="card">
-          <p className="kicker">Current run</p>
-          <p>Your next assignment will appear here.</p>
-        </div>
-        <div className="card">
-          <p className="kicker">Available knowledge</p>
-          <p className="meta">Knowledge items 0</p>
-          <p className="meta">Imported notes 0</p>
-          <p className="meta">Documents 0</p>
         </div>
       </aside>
     </>
