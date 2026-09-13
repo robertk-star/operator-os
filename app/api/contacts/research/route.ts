@@ -40,15 +40,13 @@ function findAddress(text: string) {
   return match?.[0] || "";
 }
 
-function isParked(html: string, text: string) {
-  const blob = `${html} ${text}`.toLowerCase();
-  return /domain is for sale|buy this domain|parked free|sedoparking|godaddy.com\/domain|this domain is registered|account suspended/.test(blob);
+function isParked(text: string) {
+  return /domain is for sale|buy this domain|parked free|sedoparking|this domain is registered|account suspended/.test(text.toLowerCase());
 }
 
 function variants(raw: string) {
   try {
     const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
-    if (!["http:", "https:"].includes(url.protocol)) return [];
     const host = url.hostname.replace(/^www\./, "");
     return [`https://www.${host}`, `https://${host}`];
   } catch {
@@ -56,22 +54,19 @@ function variants(raw: string) {
   }
 }
 
-async function fetchPage(url: string) {
+async function fetchUrl(url: string) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: {
-        "User-Agent": BROWSER,
-        Accept: "text/html,application/xhtml+xml",
-      },
+      headers: { "User-Agent": BROWSER, Accept: "text/html,application/xhtml+xml,text/plain" },
       redirect: "follow",
     });
     const html = (await response.text()).slice(0, 180000);
-    return { status: response.status, finalUrl: response.url || url, html };
+    return { status: response.status, html, error: "" };
   } catch (error) {
-    return { status: 0, finalUrl: url, html: "", error: error instanceof Error ? error.message : "failed" };
+    return { status: 0, html: "", error: error instanceof Error ? error.message : "failed" };
   } finally {
     clearTimeout(timer);
   }
@@ -98,44 +93,41 @@ export async function POST(request: Request) {
   const seeds = variants(contact.website || org?.domain || "");
   if (!seeds.length) return NextResponse.json({ error: "This contact has no website to research." }, { status: 400 });
 
-  let live: { finalUrl: string; html: string } | null = null;
+  let working = "";
+  let blob = "";
+  let title = "";
+  let description = "";
   const attempts: string[] = [];
+
   for (const seed of seeds) {
-    const result = await fetchPage(seed);
-    const text = pageText(result.html);
-    const parked = result.html ? isParked(result.html, text) : false;
-    attempts.push(`${seed} status ${result.status}${parked ? " parked" : ""}${result.error ? ` ${result.error}` : ""}`);
-    if (result.status >= 200 && result.status < 400 && result.html.length > 200 && !parked) {
-      live = { finalUrl: result.finalUrl, html: result.html };
-      break;
+    const direct = await fetchUrl(seed);
+    let html = direct.html;
+    let via = "direct";
+    if (direct.status === 0 || html.length < 200) {
+      const reader = await fetchUrl(`https://r.jina.ai/${seed}`);
+      html = reader.html;
+      via = "reader";
+      attempts.push(`${seed} direct ${direct.status || direct.error || "fail"}; reader ${reader.status}`);
+    } else {
+      attempts.push(`${seed} direct ${direct.status}`);
     }
+    const text = pageText(html);
+    if (html.length < 200 || isParked(text)) continue;
+    working = seed;
+    blob = text;
+    title = decode((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").slice(0, 180)) || text.slice(0, 120);
+    description = decode((html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i)?.[1] || "").slice(0, 400)) || text.slice(0, 400);
+    if (via) break;
   }
 
-  if (!live) {
+  if (!working) {
     const notes = `No working website.\n${attempts.join("\n")}`;
     const patch = { research_notes: notes, researched_at: new Date().toISOString() };
     await supabase.from("contacts").update(patch).eq("id", contact.id);
     return NextResponse.json({ notes, patch, error: notes }, { status: 422 });
   }
 
-  const working = live.finalUrl.split("#")[0].replace(/\/$/, "");
-  const origin = new URL(working.startsWith("http") ? working : `https://${working}`).origin;
-  const paths = [working, `${origin}/about`, `${origin}/contact`, `${origin}/contact-us`];
-  let title = "";
-  let description = "";
-  let address = "";
-  let blob = "";
-
-  for (const path of paths) {
-    const result = path === working ? { html: live.html } : await fetchPage(path);
-    if (!result.html) continue;
-    if (!title) title = decode((result.html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").slice(0, 180));
-    if (!description) description = decode((result.html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i)?.[1] || "").slice(0, 400));
-    const text = pageText(result.html);
-    blob += ` ${text}`;
-    if (!address) address = findAddress(text);
-  }
-
+  const address = findAddress(blob);
   const industry = contact.industry || guessIndustry(`${title} ${description} ${blob.slice(0, 2000)}`);
   const notes = [description || title, industry ? `Industry: ${industry}` : "", address ? `Address: ${address}` : "", `Website: ${working}`]
     .filter(Boolean)
