@@ -58,6 +58,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
   const [contacts, setContacts] = useState(initialContacts);
   const [query, setQuery] = useState("");
   const [summary, setSummary] = useState<"active" | "archived" | "suppressed" | "missingEmail" | "staffing">("active");
+  const [reviewFilter, setReviewFilter] = useState<"all" | "reviewed" | "open">("all");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState(initialContacts[0]?.id || "");
   const [message, setMessage] = useState("");
@@ -82,10 +83,12 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
       if (summary === "staffing" && item.status !== "staffing") return false;
       if (summary === "suppressed" && !(item.do_not_disturb || item.email_status === "do_not_contact")) return false;
       if (summary === "missingEmail" && item.email) return false;
+      if (reviewFilter === "reviewed" && !item.reviewed) return false;
+      if (reviewFilter === "open" && item.reviewed) return false;
       if (!term) return true;
       return [displayName(item), orgName(item), item.email, item.website, item.industry].join(" ").toLowerCase().includes(term);
     });
-  }, [contacts, query, summary]);
+  }, [contacts, query, summary, reviewFilter]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -190,6 +193,11 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
       <div className="contacts-split">
         <aside className="contacts-list">
           <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search name, company, email..." />
+          <div className="row">
+            <button type="button" className={reviewFilter === "all" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("all"); setPage(1); }}>All</button>
+            <button type="button" className={reviewFilter === "open" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("open"); setPage(1); }}>Not reviewed</button>
+            <button type="button" className={reviewFilter === "reviewed" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("reviewed"); setPage(1); }}>Reviewed</button>
+          </div>
           <p className="meta">Showing {visible.length} of {filtered.length}</p>
           {visible.map((item) => {
             const name = displayName(item);
