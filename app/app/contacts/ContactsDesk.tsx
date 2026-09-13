@@ -213,22 +213,20 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
         <div className="contact-record card">
           {selected ? (
             <>
-              <div className="record-head">
-                <div>
-                  <p className="kicker">Contact record</p>
-                  <h3>{displayName(selected)}</h3>
-                </div>
-                <ReviewToggle checked={Boolean(selected.reviewed)} onChange={(next) => void save({ reviewed: next })} />
-              </div>
+              <p className="kicker">Contact record</p>
+              <h3>{displayName(selected)}</h3>
               {selected.website ? (
                 <p>
                   <a href={selected.website.startsWith("http") ? selected.website : `https://${selected.website}`} target="_blank" rel="noreferrer">{selected.website}</a>
                 </p>
               ) : null}
-              <div className="row">
-                <button type="button" className="chip" onClick={() => void archive()}>{selected.status === "archived" ? "Restore" : "Archive"}</button>
-                <button type="button" className="chip" onClick={() => void save({ status: "staffing" })}>Move to Staffing</button>
-                <button type="button" className="chip" onClick={() => void remove()}>Delete</button>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div className="row">
+                  <button type="button" className="chip" onClick={() => void archive()}>{selected.status === "archived" ? "Restore" : "Archive"}</button>
+                  <button type="button" className="chip" onClick={() => void save({ status: "staffing" })}>Move to Staffing</button>
+                  <button type="button" className="chip" onClick={() => void remove()}>Delete</button>
+                </div>
+                <ReviewToggle checked={Boolean(selected.reviewed)} onChange={(next) => void save({ reviewed: next })} />
               </div>
               <ResearchButton
                 contactId={selected.id}
