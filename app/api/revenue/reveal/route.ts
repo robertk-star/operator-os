@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     contact = data;
     personId = personId || data.apollo_person_id || "";
     firstName = firstName || data.first_name || "";
-    lastName = lastName || data.last_name || data.full_name || "";
+    lastName = lastName || data.last_name || "";
     domain = domain || domainOf(data.website);
     organizationName = organizationName || data.business_name || "";
   }
@@ -46,48 +46,47 @@ export async function POST(request: Request) {
   const payload: Record<string, unknown> = {
     reveal_personal_emails: false,
     reveal_phone_number: false,
+    run_waterfall_email: false,
+    run_waterfall_phone: false,
   };
   if (personId) payload.id = personId;
   if (firstName) payload.first_name = firstName;
-  if (lastName) payload.last_name = lastName;
+  if (lastName && !/\*/.test(lastName)) payload.last_name = lastName;
   if (domain) payload.domain = domain;
   if (organizationName) payload.organization_name = organizationName;
 
-  const response = await fetch("https://api.apollo.io/api/v1/people/match", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      accept: "application/json",
-      "Cache-Control": "no-cache",
-      "X-Api-Key": key,
-    },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    "https://api.apollo.io/api/v1/people/match?reveal_personal_emails=false&reveal_phone_number=false&run_waterfall_email=false&run_waterfall_phone=false",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        accept: "application/json",
+        "Cache-Control": "no-cache",
+        "X-Api-Key": key,
+      },
+      body: JSON.stringify(payload),
+    }
+  );
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
     return NextResponse.json({ error: result.error || result.message || JSON.stringify(result) }, { status: 400 });
   }
 
   const person = result.person || result;
-  const email = person.email || person.work_email || "";
-  const patch = {
-    email: email || null,
-    email_status: email ? "review_required" : "missing",
-    first_name: person.first_name || firstName,
-    last_name: person.last_name || lastName,
-    job_title: person.title || undefined,
-    linkedin_url: person.linkedin_url || undefined,
-    apollo_person_id: person.id || personId || null,
-  };
+  const email = person.email && !String(person.email).includes("*") ? person.email : "";
 
   if (contact) {
     const update: Record<string, unknown> = {
-      email: patch.email,
-      email_status: patch.email_status,
-      apollo_person_id: patch.apollo_person_id,
+      email: email || null,
+      email_status: email ? "review_required" : "missing",
+      apollo_person_id: person.id || personId || null,
     };
-    if (patch.first_name) update.first_name = patch.first_name;
-    if (patch.last_name) update.last_name = patch.last_name;
+    if (person.first_name) update.first_name = person.first_name;
+    if (person.last_name && !/\*/.test(person.last_name)) {
+      update.last_name = person.last_name;
+      update.full_name = [person.first_name || firstName, person.last_name].filter(Boolean).join(" ");
+    }
     if (person.title) update.job_title = person.title;
     if (person.linkedin_url) update.linkedin_url = person.linkedin_url;
     await supabase.from("contacts").update(update).eq("id", contact.id);
@@ -95,15 +94,16 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     email,
-    email_status: person.email_status || (email ? "found" : "missing"),
     person: {
       id: person.id || personId,
       first_name: person.first_name || firstName,
-      last_name: person.last_name || lastName,
+      last_name: person.last_name && !/\*/.test(person.last_name) ? person.last_name : lastName,
       title: person.title || "",
       email,
       linkedin_url: person.linkedin_url || "",
     },
-    note: email ? "Email found. About 1 Apollo credit if Apollo returned new email data." : "No email found. Apollo should not charge when nothing is returned.",
+    note: email
+      ? "Email found. Apollo typically charges 1 credit for this person."
+      : "No work email in Apollo. A match can still use 1 credit for unlocking the name.",
   });
 }
