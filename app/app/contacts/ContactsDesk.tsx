@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ResearchButton } from "./ResearchButton";
 import { ReviewToggle } from "./ReviewToggle";
+import { PeopleFinder } from "./PeopleFinder";
 
 type Contact = {
   id: string;
@@ -142,11 +143,11 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     const supabase = createSupabaseBrowserClient();
     const { data, error } = await supabase
       .from("contacts")
-      .insert({ workspace_id: workspaceId, full_name: "New contact", status: "active", email_status: "review_required", reviewed: false })
-      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, source, email_status, street_address, city, state, postal_code, country, website, linkedin_url, status, do_not_disturb, research_notes, reviewed")
+      .insert({ workspace_id: workspaceId, full_name: "New company lead", status: "active", record_type: "company", email_status: "missing", reviewed: false })
+      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, source, email_status, street_address, city, state, postal_code, country, website, linkedin_url, status, do_not_disturb, research_notes, reviewed, organization_id")
       .single();
     if (error || !data) {
-      setMessage(error?.message || "Run the contact record SQL first.");
+      setMessage(error?.message || "Run the record type SQL first.");
       return;
     }
     setContacts((current) => [data, ...current]);
@@ -162,7 +163,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "contacts.csv";
+    link.download = "company-leads.csv";
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -172,12 +173,12 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
       <div className="contacts-top">
         <div>
           <h2>
-            Contacts <span className="badge">Workspace contacts</span>
+            Company leads <span className="badge">Vet companies first</span>
           </h2>
-          <p className="meta">People, companies, and CRM history in one place.</p>
+          <p className="meta">Research and review companies here. Finding people is only for reviewed leads.</p>
         </div>
         <div className="row">
-          <button type="button" onClick={createContact}>+ New contact</button>
+          <button type="button" onClick={createContact}>+ New company</button>
           <button type="button" className="chip" onClick={exportCsv}>Export CSV</button>
         </div>
       </div>
@@ -200,11 +201,11 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
       </div>
       <div className="contacts-split">
         <aside className="contacts-list">
-          <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search name, company, email..." />
+          <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search company..." />
           <div className="row">
             <button type="button" className={reviewFilter === "all" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("all"); setPage(1); }}>All</button>
             <button type="button" className={reviewFilter === "open" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("open"); setPage(1); }}>Not reviewed</button>
-            <button type="button" className={reviewFilter === "reviewed" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("reviewed"); setPage(1); }}>Reviewed</button>
+            <button type="button" className={reviewFilter === "reviewed" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("reviewed"); setPage(1); }}>Reviewed queue</button>
           </div>
           <p className="meta">Showing {visible.length} of {filtered.length}</p>
           {visible.map((item) => {
@@ -229,7 +230,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
         <div className="contact-record card">
           {selected ? (
             <>
-              <p className="kicker">Contact record</p>
+              <p className="kicker">Company lead</p>
               <h3>{displayName(selected)}</h3>
               {selected.website ? (
                 <p>
@@ -252,29 +253,20 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
                   setMessage("Research saved.");
                 }}
               />
+              <PeopleFinder
+                workspaceId={workspaceId}
+                companyId={selected.id}
+                companyName={displayName(selected)}
+                organizationId={selected.organization_id}
+                website={selected.website}
+                reviewed={Boolean(selected.reviewed)}
+              />
               <div className="form-grid">
-                <label>First name<input value={selected.first_name || ""} onChange={(e) => save({ first_name: e.target.value })} /></label>
-                <label>Last name<input value={selected.last_name || ""} onChange={(e) => save({ last_name: e.target.value })} /></label>
                 <label>Business name<input value={selected.business_name || orgName(selected)} onChange={(e) => save({ business_name: e.target.value })} /></label>
-                <label>Email<input value={selected.email || ""} onChange={(e) => save({ email: e.target.value })} /></label>
-                <label>Phone<input value={selected.phone || ""} onChange={(e) => save({ phone: e.target.value })} /></label>
-                <label>Job title<input value={selected.job_title || ""} onChange={(e) => save({ job_title: e.target.value })} /></label>
                 <label>Industry<input value={selected.industry || ""} onChange={(e) => save({ industry: e.target.value })} /></label>
-                <label>
-                  Email status
-                  <select value={selected.email_status || "unknown"} onChange={(e) => save({ email_status: e.target.value })}>
-                    {EMAIL_STATUSES.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
-                  </select>
-                </label>
-                <label>Source<input value={selected.source || ""} onChange={(e) => save({ source: e.target.value })} /></label>
                 <label>Website<input value={selected.website || ""} onChange={(e) => save({ website: e.target.value })} /></label>
-                <label>Tags<input value={(selected.tags || []).join(", ")} onChange={(e) => save({ tags: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /></label>
-                <label>LinkedIn<input value={selected.linkedin_url || ""} onChange={(e) => save({ linkedin_url: e.target.value })} /></label>
+                <label>Source<input value={selected.source || ""} onChange={(e) => save({ source: e.target.value })} /></label>
               </div>
-              <label className="dnd">
-                <input type="checkbox" checked={Boolean(selected.do_not_disturb)} onChange={(e) => save({ do_not_disturb: e.target.checked })} />
-                DND. Do not prepare or create email drafts for this contact.
-              </label>
               <div className="form-grid">
                 <label>Street address<input value={selected.street_address || ""} onChange={(e) => save({ street_address: e.target.value })} /></label>
                 <label>City<input value={selected.city || ""} onChange={(e) => save({ city: e.target.value })} /></label>
@@ -285,7 +277,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
               {message ? <p className="meta">{message}</p> : null}
             </>
           ) : (
-            <p>No contact selected.</p>
+            <p>No company selected.</p>
           )}
         </div>
       </div>
