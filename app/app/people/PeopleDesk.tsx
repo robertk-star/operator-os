@@ -39,6 +39,7 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(initialContacts[0]?.id || "");
   const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
   const selected = people.find((item) => item.id === selectedId) || null;
 
   const filtered = useMemo(() => {
@@ -63,6 +64,26 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
     }
     setPeople((current) => current.map((item) => (item.id === selected.id ? { ...item, ...patch, full_name: fullName } : item)));
     setMessage("Saved.");
+  }
+
+  async function reveal() {
+    if (!selected) return;
+    setBusy(true);
+    const response = await fetch("/api/revenue/reveal", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId: selected.id }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setBusy(false);
+    if (!response.ok) {
+      setMessage(payload.error || "Reveal failed.");
+      return;
+    }
+    if (payload.email) {
+      setPeople((current) => current.map((item) => (item.id === selected.id ? { ...item, email: payload.email } : item)));
+    }
+    setMessage(payload.note || (payload.email ? "Email saved." : "No email found."));
   }
 
   async function remove() {
@@ -97,7 +118,7 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
             <button key={item.id} type="button" className={item.id === selectedId ? "contact-row selected" : "contact-row"} onClick={() => setSelectedId(item.id)}>
               <strong>{displayName(item)}</strong>
               <span>{companyName(item)}</span>
-              <small>{item.job_title || item.email || ""}</small>
+              <small>{item.email || item.job_title || ""}</small>
             </button>
           ))}
         </aside>
@@ -115,6 +136,9 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
                 </p>
               ) : null}
               <div className="row">
+                <button type="button" disabled={busy} onClick={() => void reveal()} style={{ background: "#17243f", color: "#fff", border: 0 }}>
+                  {busy ? "Revealing..." : "Reveal email"}
+                </button>
                 <button type="button" className="chip" onClick={() => void remove()}>Delete</button>
               </div>
               <div className="form-grid">
