@@ -13,17 +13,21 @@ function domainOf(value?: string | null) {
   }
 }
 
+function clean(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text || /\*/.test(text)) return "";
+  return text;
+}
+
 function namesOf(person: any) {
-  const full = String(person.name || person.full_name || "").trim();
+  const first = clean(person.first_name);
+  const last = clean(person.last_name);
+  const full = clean(person.name || person.full_name);
   const parts = full.split(/\s+/).filter(Boolean);
-  const first = String(person.first_name || "").trim() || parts[0] || "";
-  const last =
-    String(person.last_name || person.last_name_obfuscated || "").trim() ||
-    parts.slice(1).join(" ");
   return {
-    first_name: first,
-    last_name: last,
-    full_name: [first, last].filter(Boolean).join(" ") || full,
+    first_name: first || parts[0] || "",
+    last_name: last || (parts.length > 1 && !/\*/.test(parts.slice(1).join(" ")) ? parts.slice(1).join(" ") : ""),
+    full_name: [first || parts[0], last].filter(Boolean).join(" ") || first || parts[0] || "Unknown",
   };
 }
 
@@ -54,11 +58,7 @@ export async function GET(request: Request) {
   const key = process.env.APOLLO_API_KEY;
   if (!key) return NextResponse.json({ error: "APOLLO_API_KEY missing." }, { status: 400 });
 
-  const body: Record<string, unknown> = {
-    page: 1,
-    per_page: 25,
-    person_titles: personTitles,
-  };
+  const body: Record<string, unknown> = { page: 1, per_page: 25, person_titles: personTitles };
   if (org?.apollo_organization_id) body.organization_ids = [org.apollo_organization_id];
   if (domain) body.q_organization_domains_list = [domain];
 
