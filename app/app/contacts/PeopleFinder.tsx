@@ -50,8 +50,41 @@ export function PeopleFinder({
     }
     const next: Person[] = payload.items || [];
     setItems(next);
-    setSelected(Object.fromEntries(next.map((item, index) => [keyFor(item, index), true])));
-    setMessage(next.length ? `Found ${next.length}. This used 1 Apollo credit.` : "No people matched those titles.");
+    setSelected(Object.fromEntries(next.map((item, index) => [keyFor(item, index), false])));
+    setMessage(next.length ? `Found ${next.length} names. Reveal email only for people you want.` : "No people matched those titles.");
+  }
+
+  async function revealSelected() {
+    const chosen = items.filter((item, index) => selected[keyFor(item, index)] && !item.email);
+    if (!chosen.length) {
+      setMessage("Select people with no email first.");
+      return;
+    }
+    setBusy(true);
+    let found = 0;
+    const next = [...items];
+    for (const person of chosen) {
+      const response = await fetch("/api/revenue/reveal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personId: person.id,
+          first_name: person.first_name,
+          last_name: person.last_name,
+          website,
+          company: companyName,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (payload.person?.email || payload.email) {
+        found += 1;
+        const index = next.findIndex((item) => item.id === person.id || item.full_name === person.full_name);
+        if (index >= 0) next[index] = { ...next[index], email: payload.email || payload.person.email };
+      }
+    }
+    setItems(next);
+    setBusy(false);
+    setMessage(`Revealed ${found} of ${chosen.length}. About 1 credit each when Apollo returns an email.`);
   }
 
   async function saveSelected() {
@@ -61,7 +94,7 @@ export function PeopleFinder({
     const supabase = createSupabaseBrowserClient();
     let saved = 0;
     for (const person of chosen) {
-      const { error } = await supabase.from("contacts").insert({
+      const row: Record<string, unknown> = {
         workspace_id: workspaceId,
         organization_id: organizationId || null,
         record_type: "person",
@@ -77,7 +110,9 @@ export function PeopleFinder({
         source: "apollo",
         status: "active",
         reviewed: false,
-      });
+      };
+      if (person.id) row.apollo_person_id = person.id;
+      const { error } = await supabase.from("contacts").insert(row);
       if (!error) saved += 1;
     }
     setBusy(false);
@@ -89,7 +124,7 @@ export function PeopleFinder({
   return (
     <div className="stack">
       <button type="button" disabled={busy} onClick={() => void findPeople()} style={{ background: "#17243f", color: "#fff", border: 0 }}>
-        {busy ? "Searching Apollo..." : "Find people and emails"}
+        {busy ? "Working..." : "Find people"}
       </button>
       {message ? <p className="meta">{message}</p> : null}
       {items.length ? (
@@ -100,6 +135,9 @@ export function PeopleFinder({
             </button>
             <button type="button" className="chip" onClick={() => setSelected({})}>
               Select none
+            </button>
+            <button type="button" disabled={busy} onClick={() => void revealSelected()}>
+              Reveal email for selected
             </button>
             <button type="button" disabled={busy} onClick={() => void saveSelected()}>
               Save selected to Contacts
@@ -115,7 +153,7 @@ export function PeopleFinder({
                     onChange={(event) => setSelected((current) => ({ ...current, [keyFor(item, index)]: event.target.checked }))}
                   />
                   <strong>{item.full_name}</strong>
-                  <div className="meta">{[item.title, item.email || "No email in search result"].filter(Boolean).join(" · ")}</div>
+                  <div className="meta">{[item.title, item.email || "No email yet"].filter(Boolean).join(" · ")}</div>
                 </label>
               </li>
             ))}
