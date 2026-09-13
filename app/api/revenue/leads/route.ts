@@ -13,7 +13,7 @@ type Settings = {
 };
 
 const DEFAULT_1000_PLUS = ["1001,5000", "5001,10000", "10001+"];
-const DEFAULT_EXCLUDE = ["staffing", "recruiting", "recruiter", "recruitment", "talent agency", "employment agency"];
+const DEFAULT_STAFFING = ["staffing", "recruiting", "recruiter", "recruitment", "talent agency", "employment agency"];
 
 function splitList(value: string | undefined) {
   return String(value || "")
@@ -46,7 +46,13 @@ function domainOf(value: string) {
   }
 }
 
-function blocked(text: string, terms: string[]) {
+function websiteOf(url: string) {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+}
+
+function isStaffing(text: string, terms: string[]) {
   const haystack = text.toLowerCase();
   return terms.some((term) => term && haystack.includes(term.toLowerCase()));
 }
@@ -73,10 +79,10 @@ export async function GET(request: Request) {
   const ranges = normalizeEmployeeRanges(settings.employeeRanges);
   const industries = splitList(settings.industries).filter((item) => !/staffing|recruit/i.test(item));
   const keywords = splitList(requested || settings.keywords).filter((item) => !/staffing|recruit/i.test(item));
-  const exclude = [...splitList(settings.excludeKeywords), ...splitList(settings.excludeIndustries)];
-  const excludeTerms = exclude.length ? exclude : DEFAULT_EXCLUDE;
+  const staffingTerms = [...splitList(settings.excludeKeywords), ...splitList(settings.excludeIndustries)];
+  const terms = staffingTerms.length ? staffingTerms : DEFAULT_STAFFING;
   const tags = [...industries, ...keywords];
-  const filters = { locations, employeeRanges: ranges, industries, keywords, exclude: excludeTerms, page };
+  const filters = { locations, employeeRanges: ranges, industries, keywords, staffingTerms: terms, page };
 
   const key = process.env.APOLLO_API_KEY;
   if (!key) return NextResponse.json({ source: "none", items: [], error: "APOLLO_API_KEY missing.", filters });
@@ -85,10 +91,6 @@ export async function GET(request: Request) {
   if (locations.length) body.organization_locations = locations;
   if (ranges.length) body.organization_num_employees_ranges = ranges;
   if (tags.length) body.q_organization_keyword_tags = tags;
-  if (excludeTerms.length) {
-    body.q_not_organization_keyword_tags = excludeTerms;
-    body.organization_not_keyword_tags = excludeTerms;
-  }
 
   const response = await fetch("https://api.apollo.io/api/v1/mixed_companies/search", {
     method: "POST",
@@ -111,28 +113,70 @@ export async function GET(request: Request) {
   }
 
   const organizations = payload.organizations || payload.accounts || [];
-  const items = organizations
-    .map((org: any) => {
-      const site = org.website_url || org.primary_domain || "";
-      return {
-        id: org.id || org.organization_id || "",
-        name: org.name || "Unknown company",
-        url: site,
-        domain: domainOf(site || org.primary_domain || ""),
-        snippet: [org.short_description, org.industry].filter(Boolean).join(" · "),
-        industry: org.industry || "",
-        employees: org.estimated_num_employees ? String(org.estimated_num_employees) : "",
-        location: [org.city, org.state, org.country].filter(Boolean).join(", "),
-        source: "apollo",
-      };
-    })
-    .filter((item: { id: string; name: string; domain: string; snippet: string; industry: string }) => {
-      if (item.id && savedApollo.has(item.id)) return false;
-      if (savedNames.has(item.name.trim().toLowerCase())) return false;
-      if (item.domain && savedDomains.has(item.domain)) return false;
-      if (blocked(`${item.name} ${item.snippet} ${item.industry}`, excludeTerms)) return false;
-      return true;
-    });
+  const mapped = organizations.map((org: any) => {
+    const site = org.website_url || org.primary_domain || "";
+    return {
+      id: org.id || org.organization_id || "",
+      name: org.name || "Unknown company",
+      url: site,
+      domain: domainOf(site || org.primary_domain || ""),
+      snippet: [org.short_description, org.industry].filter(Boolean).join(" · "),
+      industry: org.industry || "",
+      source: "apollo",
+    };
+  });
+
+  const fresh = mapped.filter((item: { id: string; name: string; domain: string }) => {
+    if (item.id && savedApollo.has(item.id)) return false;
+    if (savedNames.has(item.name.trim().toLowerCase())) return false;
+    if (item.domain && savedDomains.has(item.domain)) return false;
+    return true;
+  });
+
+  const staffing = fresh.filter((item: { name: string; snippet: string; industry: string }) =>
+    isStaffing(`${item.name} ${item.snippet} ${item.industry}`, terms)
+  );
+  const items = fresh.filter((item: { name: string; snippet: string; industry: string }) =>
+    !isStaffing(`${item.name} ${item.snippet} ${item.industry}`, terms)
+  );
+
+  let filed = 0;
+  for (const lead of staffing) {
+    const orgInsert: Record<string, unknown> = {
+      workspace_id: workspace.id,
+      name: lead.name,
+      domain: lead.domain || null,
+    };
+    if (lead.id) orgInsert.apollo_organization_id = lead.id;
+    let { data: organization, error: orgError } = await supabase.from("organizations").insert(orgInsert).select("id").single();
+    if (orgError) {
+      const retry = await supabase.from("organizations").insert({ workspace_id: workspace.id, name: lead.name, domain: lead.domain || null }).select("id").single();
+      organization = retry.data;
+      orgError = retry.error;
+    }
+    if (orgError || !organization) continue;
+    const contactInsert: Record<string, unknown> = {
+      workspace_id: workspace.id,
+      organization_id: organization.id,
+      full_name: lead.name,
+      business_name: lead.name,
+      website: websiteOf(lead.url),
+      industry: lead.industry || "Staffing & Recruiting",
+      source: "apollo",
+      status: "staffing",
+      email_status: "missing",
+    };
+    const { error: contactError } = await supabase.from("contacts").insert(contactInsert);
+    if (contactError) {
+      await supabase.from("contacts").insert({
+        workspace_id: workspace.id,
+        organization_id: organization.id,
+        full_name: lead.name,
+        status: "staffing",
+      });
+    }
+    filed += 1;
+  }
 
   await supabase.from("integrations").upsert(
     {
@@ -144,16 +188,16 @@ export async function GET(request: Request) {
     { onConflict: "workspace_id,provider" }
   );
 
-  const skipped = organizations.length - items.length;
-  const nextPage = organizations.length ? page + 1 : page;
+  const skipped = organizations.length - fresh.length;
   return NextResponse.json({
     source: "apollo",
     items,
-    error: items.length ? "" : skipped ? "This page was all saved or excluded companies. Use Next 100." : "Apollo returned no companies for those filters.",
+    error: "",
     filters,
     skipped,
+    filed,
     fetched: organizations.length,
     page,
-    nextPage,
+    nextPage: organizations.length ? page + 1 : page,
   });
 }
