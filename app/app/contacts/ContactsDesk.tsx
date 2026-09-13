@@ -42,8 +42,11 @@ function orgName(contact: Contact) {
   if (Array.isArray(value)) return value[0]?.name || "";
   return value?.name || contact.business_name || "";
 }
+function personName(contact: Contact) {
+  return [contact.first_name, contact.last_name].map((part) => String(part || "").trim()).filter(Boolean).join(" ");
+}
 function displayName(contact: Contact) {
-  return [contact.first_name, contact.last_name].filter(Boolean).join(" ") || contact.full_name || orgName(contact) || "Untitled";
+  return personName(contact) || contact.business_name || orgName(contact) || contact.full_name || "Untitled";
 }
 function host(value?: string | null) {
   if (!value) return "";
@@ -96,9 +99,14 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
   async function save(patch: Partial<Contact>) {
     if (!selected) return;
     const supabase = createSupabaseBrowserClient();
+    const first = patch.first_name !== undefined ? patch.first_name : selected.first_name;
+    const last = patch.last_name !== undefined ? patch.last_name : selected.last_name;
+    const business = patch.business_name !== undefined ? patch.business_name : selected.business_name;
     const fullName =
-      [patch.first_name ?? selected.first_name, patch.last_name ?? selected.last_name].filter(Boolean).join(" ") ||
-      selected.full_name;
+      [first, last].map((part) => String(part || "").trim()).filter(Boolean).join(" ") ||
+      business ||
+      orgName(selected) ||
+      "Untitled";
     const { error } = await supabase.from("contacts").update({ ...patch, full_name: fullName }).eq("id", selected.id);
     if (error) {
       setMessage(error.message);
