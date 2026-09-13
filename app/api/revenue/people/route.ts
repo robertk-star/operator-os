@@ -13,6 +13,20 @@ function domainOf(value?: string | null) {
   }
 }
 
+function namesOf(person: any) {
+  const full = String(person.name || person.full_name || "").trim();
+  const parts = full.split(/\s+/).filter(Boolean);
+  const first = String(person.first_name || "").trim() || parts[0] || "";
+  const last =
+    String(person.last_name || person.last_name_obfuscated || "").trim() ||
+    parts.slice(1).join(" ");
+  return {
+    first_name: first,
+    last_name: last,
+    full_name: [first, last].filter(Boolean).join(" ") || full,
+  };
+}
+
 export async function GET(request: Request) {
   const workspace = await getCurrentWorkspace();
   if (!workspace) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -44,7 +58,6 @@ export async function GET(request: Request) {
     page: 1,
     per_page: 25,
     person_titles: personTitles,
-    contact_email_status: ["verified", "unverified"],
   };
   if (org?.apollo_organization_id) body.organization_ids = [org.apollo_organization_id];
   if (domain) body.q_organization_domains_list = [domain];
@@ -65,16 +78,19 @@ export async function GET(request: Request) {
   }
 
   const people = payload.people || payload.contacts || [];
-  const items = people.map((person: any) => ({
-    id: person.id || "",
-    first_name: person.first_name || "",
-    last_name: person.last_name || "",
-    full_name: person.name || [person.first_name, person.last_name].filter(Boolean).join(" "),
-    title: person.title || person.headline || "",
-    email: person.email || person.email_status === "unavailable" ? "" : person.email,
-    email_status: person.email_status || "",
-    linkedin_url: person.linkedin_url || "",
-  }));
+  const items = people.map((person: any) => {
+    const names = namesOf(person);
+    return {
+      id: person.id || "",
+      first_name: names.first_name,
+      last_name: names.last_name,
+      full_name: names.full_name,
+      title: person.title || person.headline || "",
+      email: person.email && person.email_status !== "unavailable" ? person.email : "",
+      email_status: person.email_status || "",
+      linkedin_url: person.linkedin_url || "",
+    };
+  });
 
   return NextResponse.json({
     company: company.business_name || company.full_name,
