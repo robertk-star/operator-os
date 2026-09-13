@@ -9,7 +9,7 @@ export function ResearchButton({
 }: {
   contactId: string;
   notes?: string | null;
-  onDone: (notes: string, extra?: { email?: string; linkedin_url?: string }) => void;
+  onDone: (notes: string, extra?: Record<string, unknown>) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -25,7 +25,8 @@ export function ResearchButton({
     const payload = await response.json().catch(() => ({}));
     setBusy(false);
     if (!response.ok) {
-      setError(payload.error || "Research failed.");
+      setError(payload.error || payload.notes || "Research failed.");
+      onDone(payload.notes || payload.error || "Website did not load.", payload.patch || {});
       return;
     }
     onDone(payload.notes || "", payload.patch || {});
@@ -33,7 +34,12 @@ export function ResearchButton({
 
   return (
     <div className="stack">
-      <button type="button" disabled={busy} onClick={() => void run()}>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void run()}
+        style={{ background: "#17243f", color: "#fff", border: 0, width: "100%", cursor: "pointer" }}
+      >
         {busy ? "Reading website..." : "Research website"}
       </button>
       {error ? <p className="meta">{error}</p> : null}
