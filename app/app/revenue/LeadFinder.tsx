@@ -59,6 +59,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
         payload.source ? `Source: ${payload.source}` : "",
         payload.page ? `Page ${payload.page}` : "",
         payload.fetched != null ? `fetched ${payload.fetched}` : "",
+        payload.filed ? `filed ${payload.filed} to Staffing` : "",
         payload.skipped ? `skipped ${payload.skipped} already saved` : "",
         payload.error || "",
       ]
@@ -137,7 +138,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
   return (
     <div className="stack wide">
       <p className="meta">
-        Filters come from <Link href="/app/settings">Settings</Link>. Each Find or Next 100 uses 1 Apollo credit. Saving is free and stores the website.
+        Filters come from <Link href="/app/settings">Settings</Link>. Staffing and recruiting companies are saved to the Staffing list automatically.
       </p>
       <form
         className="stack"
