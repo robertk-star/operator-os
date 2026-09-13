@@ -14,6 +14,8 @@ export default async function SettingsPage() {
     employeeRanges?: string;
     keywords?: string;
     industries?: string;
+    excludeKeywords?: string;
+    excludeIndustries?: string;
   };
   return (
     <section className="main">
@@ -27,6 +29,8 @@ export default async function SettingsPage() {
         employeeRanges={metadata.employeeRanges || ""}
         keywords={metadata.keywords || ""}
         industries={metadata.industries || ""}
+        excludeKeywords={metadata.excludeKeywords || "staffing, recruiting, recruiter, talent agency, employment agency"}
+        excludeIndustries={metadata.excludeIndustries || "Staffing & Recruiting"}
       />
     </section>
   );
