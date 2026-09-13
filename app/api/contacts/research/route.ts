@@ -44,6 +44,12 @@ function isParked(text: string) {
   return /domain is for sale|buy this domain|parked free|sedoparking|this domain is registered|account suspended/.test(text.toLowerCase());
 }
 
+function isChallenge(text: string) {
+  return /just a moment|enable javascript and cookies|checking your browser|cf-browser-verification|attention required|verify you are human|cloudflare/.test(
+    text.toLowerCase()
+  );
+}
+
 function variants(raw: string) {
   try {
     const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
@@ -97,31 +103,38 @@ export async function POST(request: Request) {
   let blob = "";
   let title = "";
   let description = "";
-  const attempts: string[] = [];
+  let blocked = "";
 
   for (const seed of seeds) {
     const direct = await fetchUrl(seed);
     let html = direct.html;
-    let via = "direct";
     if (direct.status === 0 || html.length < 200) {
       const reader = await fetchUrl(`https://r.jina.ai/${seed}`);
       html = reader.html;
-      via = "reader";
-      attempts.push(`${seed} direct ${direct.status || direct.error || "fail"}; reader ${reader.status}`);
-    } else {
-      attempts.push(`${seed} direct ${direct.status}`);
     }
     const text = pageText(html);
-    if (html.length < 200 || isParked(text)) continue;
+    if (!html || html.length < 80) continue;
+    if (isParked(text)) continue;
+    if (isChallenge(text)) {
+      blocked = seed;
+      continue;
+    }
     working = seed;
     blob = text;
     title = decode((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").slice(0, 180)) || text.slice(0, 120);
     description = decode((html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i)?.[1] || "").slice(0, 400)) || text.slice(0, 400);
-    if (via) break;
+    break;
+  }
+
+  if (!working && blocked) {
+    const notes = `Website is live at ${blocked}, but the company site blocks automated research. Open the link and copy a short description if you need it.`;
+    const patch = { research_notes: notes, researched_at: new Date().toISOString(), website: blocked };
+    await supabase.from("contacts").update(patch).eq("id", contact.id);
+    return NextResponse.json({ notes, patch });
   }
 
   if (!working) {
-    const notes = `No working website.\n${attempts.join("\n")}`;
+    const notes = "No working website. Both www and non-www failed to load or look parked.";
     const patch = { research_notes: notes, researched_at: new Date().toISOString() };
     await supabase.from("contacts").update(patch).eq("id", contact.id);
     return NextResponse.json({ notes, patch, error: notes }, { status: 422 });
@@ -154,5 +167,5 @@ export async function POST(request: Request) {
 
   const { error } = await supabase.from("contacts").update(patch).eq("id", contact.id);
   if (error) return NextResponse.json({ notes, warning: error.message, patch });
-  return NextResponse.json({ notes, patch, attempts });
+  return NextResponse.json({ notes, patch });
 }
