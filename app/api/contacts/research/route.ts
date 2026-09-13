@@ -2,16 +2,6 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 
-function cleanUrl(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  const url = new URL(trimmed.startsWith("http") ? trimmed : `https://${trimmed}`);
-  if (!["http:", "https:"].includes(url.protocol)) return "";
-  const host = url.hostname.toLowerCase();
-  if (host === "localhost" || host.endsWith(".local") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return "";
-  return url.toString();
-}
-
 function decode(value: string) {
   return value
     .replace(/&/g, "&")
@@ -47,6 +37,23 @@ function findAddress(text: string) {
   return match?.[0] || "";
 }
 
+function isParked(html: string, text: string) {
+  const blob = `${html} ${text}`.toLowerCase();
+  return /domain is for sale|buy this domain|parked free|sedoparking|godaddy.com\/domain|this domain is registered|coming soon|website is under construction|account suspended|default webpage/.test(blob);
+}
+
+function variants(raw: string) {
+  try {
+    const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    if (!["http:", "https:"].includes(url.protocol)) return [];
+    const host = url.hostname.replace(/^www\./, "");
+    if (host === "localhost" || host.endsWith(".local")) return [];
+    return [`https://${host}`, `https://www.${host}`];
+  } catch {
+    return [];
+  }
+}
+
 async function fetchPage(url: string) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
@@ -56,19 +63,17 @@ async function fetchPage(url: string) {
       headers: { "User-Agent": "OperatorOS/0.1 research" },
       redirect: "follow",
     });
-    const html = await response.text();
-    return html.slice(0, 180000);
+    const html = (await response.text()).slice(0, 180000);
+    return { ok: response.ok, finalUrl: response.url || url, html };
   } catch {
-    return "";
+    return { ok: false, finalUrl: url, html: "" };
   } finally {
     clearTimeout(timer);
   }
 }
 
 function pageText(html: string) {
-  return decode(
-    html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ")
-  );
+  return decode(html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
 }
 
 export async function POST(request: Request) {
@@ -85,34 +90,58 @@ export async function POST(request: Request) {
   if (!contact) return NextResponse.json({ error: "Contact not found." }, { status: 404 });
 
   const org = Array.isArray(contact.organizations) ? contact.organizations[0] : contact.organizations;
-  const start = cleanUrl(contact.website || (org?.domain ? `https://${org.domain}` : ""));
-  if (!start) return NextResponse.json({ error: "This contact has no website to research." }, { status: 400 });
+  const seeds = variants(contact.website || org?.domain || "");
+  if (!seeds.length) return NextResponse.json({ error: "This contact has no website to research." }, { status: 400 });
 
-  const root = new URL(start);
-  const paths = [start, `${root.origin}/about`, `${root.origin}/contact`, `${root.origin}/contact-us`];
+  let live: { finalUrl: string; html: string } | null = null;
+  const attempts: string[] = [];
+  for (const seed of seeds) {
+    const result = await fetchPage(seed);
+    attempts.push(`${seed} ${result.ok ? "ok" : "failed"}`);
+    if (!result.ok || !result.html) continue;
+    const text = pageText(result.html);
+    if (isParked(result.html, text)) {
+      attempts.push(`${seed} parked`);
+      continue;
+    }
+    live = result;
+    break;
+  }
+
+  if (!live) {
+    const notes = `No working website. Tried ${seeds.join(" and ")}. Both failed to load or look parked.`;
+    const patch = { research_notes: notes, researched_at: new Date().toISOString() };
+    await supabase.from("contacts").update(patch).eq("id", contact.id);
+    return NextResponse.json({ notes, patch, error: notes }, { status: 422 });
+  }
+
+  const working = live.finalUrl.replace(/\/$/, "");
+  const origin = new URL(working).origin;
+  const paths = [working, `${origin}/about`, `${origin}/contact`, `${origin}/contact-us`];
   let title = "";
   let description = "";
   let address = "";
   let blob = "";
 
   for (const path of paths) {
-    const html = await fetchPage(path);
-    if (!html) continue;
-    if (!title) title = decode((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").slice(0, 180));
-    if (!description) description = decode((html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i)?.[1] || "").slice(0, 400));
-    const text = pageText(html);
+    const result = path === working ? live : await fetchPage(path);
+    if (!result.html) continue;
+    if (!title) title = decode((result.html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").slice(0, 180));
+    if (!description) description = decode((result.html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i)?.[1] || "").slice(0, 400));
+    const text = pageText(result.html);
     blob += ` ${text}`;
     if (!address) address = findAddress(text);
   }
 
   const industry = contact.industry || guessIndustry(`${title} ${description} ${blob.slice(0, 2000)}`);
-  const notes = [description || title, industry ? `Industry: ${industry}` : "", address ? `Address: ${address}` : ""]
+  const notes = [description || title, industry ? `Industry: ${industry}` : "", address ? `Address: ${address}` : "", `Website: ${working}`]
     .filter(Boolean)
     .join("\n");
 
   const patch: Record<string, unknown> = {
     research_notes: notes,
     researched_at: new Date().toISOString(),
+    website: working,
   };
   if (industry) patch.industry = industry;
   if (address && !contact.street_address) {
@@ -130,5 +159,5 @@ export async function POST(request: Request) {
 
   const { error } = await supabase.from("contacts").update(patch).eq("id", contact.id);
   if (error) return NextResponse.json({ notes, warning: error.message, patch });
-  return NextResponse.json({ notes, patch });
+  return NextResponse.json({ notes, patch, attempts });
 }
