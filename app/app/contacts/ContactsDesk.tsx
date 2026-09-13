@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { ResearchButton } from "./ResearchButton";
+import { ReviewToggle } from "./ReviewToggle";
 
 type Contact = {
   id: string;
@@ -28,6 +29,7 @@ type Contact = {
   do_not_disturb?: boolean | null;
   research_notes?: string | null;
   researched_at?: string | null;
+  reviewed?: boolean | null;
   organization_id?: string | null;
   organizations?: { name?: string; domain?: string } | { name?: string; domain?: string }[] | null;
 };
@@ -55,7 +57,7 @@ function host(value?: string | null) {
 export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: string; initialContacts: Contact[] }) {
   const [contacts, setContacts] = useState(initialContacts);
   const [query, setQuery] = useState("");
-  const [summary, setSummary] = useState<"active" | "archived" | "suppressed" | "missingEmail">("active");
+  const [summary, setSummary] = useState<"active" | "archived" | "suppressed" | "missingEmail" | "staffing">("active");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState(initialContacts[0]?.id || "");
   const [message, setMessage] = useState("");
@@ -66,6 +68,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     return {
       active: contacts.filter((item) => (item.status || "active") === "active").length,
       archived: contacts.filter((item) => item.status === "archived").length,
+      staffing: contacts.filter((item) => item.status === "staffing").length,
       suppressed: contacts.filter((item) => item.do_not_disturb || item.email_status === "do_not_contact").length,
       missingEmail: contacts.filter((item) => !item.email).length,
     };
@@ -76,6 +79,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     return contacts.filter((item) => {
       if (summary === "active" && (item.status || "active") !== "active") return false;
       if (summary === "archived" && item.status !== "archived") return false;
+      if (summary === "staffing" && item.status !== "staffing") return false;
       if (summary === "suppressed" && !(item.do_not_disturb || item.email_status === "do_not_contact")) return false;
       if (summary === "missingEmail" && item.email) return false;
       if (!term) return true;
@@ -127,8 +131,8 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     const supabase = createSupabaseBrowserClient();
     const { data, error } = await supabase
       .from("contacts")
-      .insert({ workspace_id: workspaceId, full_name: "New contact", status: "active", email_status: "review_required" })
-      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, source, email_status, street_address, city, state, postal_code, country, website, linkedin_url, status, do_not_disturb, research_notes")
+      .insert({ workspace_id: workspaceId, full_name: "New contact", status: "active", email_status: "review_required", reviewed: false })
+      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, source, email_status, street_address, city, state, postal_code, country, website, linkedin_url, status, do_not_disturb, research_notes, reviewed")
       .single();
     if (error || !data) {
       setMessage(error?.message || "Run the contact record SQL first.");
@@ -140,8 +144,8 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
   }
 
   function exportCsv() {
-    const header = ["Name", "Email", "Phone", "Company", "Title", "Industry", "Website"];
-    const rows = filtered.map((item) => [displayName(item), item.email || "", item.phone || "", orgName(item), item.job_title || "", item.industry || "", item.website || ""]);
+    const header = ["Name", "Email", "Phone", "Company", "Title", "Industry", "Website", "Reviewed"];
+    const rows = filtered.map((item) => [displayName(item), item.email || "", item.phone || "", orgName(item), item.job_title || "", item.industry || "", item.website || "", item.reviewed ? "yes" : "no"]);
     const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -170,6 +174,9 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
         <button type="button" className={summary === "active" ? "kpi kpi-dark" : "kpi"} onClick={() => { setSummary("active"); setPage(1); }}>
           <strong>{counts.active}</strong><span>Active</span>
         </button>
+        <button type="button" className={summary === "staffing" ? "kpi kpi-dark" : "kpi"} onClick={() => { setSummary("staffing"); setPage(1); }}>
+          <strong>{counts.staffing}</strong><span>Staffing</span>
+        </button>
         <button type="button" className={summary === "archived" ? "kpi kpi-dark" : "kpi"} onClick={() => { setSummary("archived"); setPage(1); }}>
           <strong>{counts.archived}</strong><span>Archived</span>
         </button>
@@ -193,7 +200,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
                 <strong>{name}</strong>
                 {company && company.toLowerCase() !== name.toLowerCase() ? <span>{company}</span> : null}
                 {site ? <small>{site}</small> : null}
-                {item.do_not_disturb ? <em>DND</em> : null}
+                {item.reviewed ? <em>REVIEWED</em> : null}
               </button>
             );
           })}
@@ -206,17 +213,21 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
         <div className="contact-record card">
           {selected ? (
             <>
-              <p className="kicker">Contact record</p>
-              <h3>{displayName(selected)}</h3>
+              <div className="record-head">
+                <div>
+                  <p className="kicker">Contact record</p>
+                  <h3>{displayName(selected)}</h3>
+                </div>
+                <ReviewToggle checked={Boolean(selected.reviewed)} onChange={(next) => void save({ reviewed: next })} />
+              </div>
               {selected.website ? (
                 <p>
                   <a href={selected.website.startsWith("http") ? selected.website : `https://${selected.website}`} target="_blank" rel="noreferrer">{selected.website}</a>
                 </p>
               ) : null}
               <div className="row">
-                <button type="button" className="chip" onClick={() => void archive()}>
-                  {selected.status === "archived" ? "Restore" : "Archive"}
-                </button>
+                <button type="button" className="chip" onClick={() => void archive()}>{selected.status === "archived" ? "Restore" : "Archive"}</button>
+                <button type="button" className="chip" onClick={() => void save({ status: "staffing" })}>Move to Staffing</button>
                 <button type="button" className="chip" onClick={() => void remove()}>Delete</button>
               </div>
               <ResearchButton
