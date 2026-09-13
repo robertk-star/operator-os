@@ -39,6 +39,10 @@ export function PeopleFinder({
   }
 
   async function findPeople() {
+    if (!reviewed) {
+      setMessage("Turn Reviewed on first.");
+      return;
+    }
     setBusy(true);
     setMessage("");
     const response = await fetch(`/api/revenue/people?contactId=${companyId}`);
@@ -119,13 +123,12 @@ export function PeopleFinder({
     setMessage(`Saved ${saved} people to Contacts.`);
   }
 
-  if (!reviewed) return <p className="meta">Mark Reviewed to find people at this company.</p>;
-
   return (
     <div className="stack">
-      <button type="button" disabled={busy} onClick={() => void findPeople()} style={{ background: "#17243f", color: "#fff", border: 0 }}>
+      <button type="button" disabled={busy} onClick={() => void findPeople()} style={{ background: "#17243f", color: "#fff", border: 0, width: "100%" }}>
         {busy ? "Working..." : "Find people"}
       </button>
+      {!reviewed ? <p className="meta">Turn Reviewed on to run Find people.</p> : null}
       {message ? <p className="meta">{message}</p> : null}
       {items.length ? (
         <>
