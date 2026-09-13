@@ -7,10 +7,13 @@ type Settings = {
   employeeRanges?: string;
   keywords?: string;
   industries?: string;
+  excludeKeywords?: string;
+  excludeIndustries?: string;
   apolloCompanyPage?: number;
 };
 
 const DEFAULT_1000_PLUS = ["1001,5000", "5001,10000", "10001+"];
+const DEFAULT_EXCLUDE = ["staffing", "recruiting", "recruiter", "recruitment", "talent agency", "employment agency"];
 
 function splitList(value: string | undefined) {
   return String(value || "")
@@ -43,6 +46,11 @@ function domainOf(value: string) {
   }
 }
 
+function blocked(text: string, terms: string[]) {
+  const haystack = text.toLowerCase();
+  return terms.some((term) => term && haystack.includes(term.toLowerCase()));
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const requested = url.searchParams.get("q")?.trim();
@@ -63,10 +71,12 @@ export async function GET(request: Request) {
 
   const locations = splitList(settings.locations);
   const ranges = normalizeEmployeeRanges(settings.employeeRanges);
-  const industries = splitList(settings.industries);
-  const keywords = splitList(requested || settings.keywords);
+  const industries = splitList(settings.industries).filter((item) => !/staffing|recruit/i.test(item));
+  const keywords = splitList(requested || settings.keywords).filter((item) => !/staffing|recruit/i.test(item));
+  const exclude = [...splitList(settings.excludeKeywords), ...splitList(settings.excludeIndustries)];
+  const excludeTerms = exclude.length ? exclude : DEFAULT_EXCLUDE;
   const tags = [...industries, ...keywords];
-  const filters = { locations, employeeRanges: ranges, industries, keywords, page };
+  const filters = { locations, employeeRanges: ranges, industries, keywords, exclude: excludeTerms, page };
 
   const key = process.env.APOLLO_API_KEY;
   if (!key) return NextResponse.json({ source: "none", items: [], error: "APOLLO_API_KEY missing.", filters });
@@ -75,6 +85,10 @@ export async function GET(request: Request) {
   if (locations.length) body.organization_locations = locations;
   if (ranges.length) body.organization_num_employees_ranges = ranges;
   if (tags.length) body.q_organization_keyword_tags = tags;
+  if (excludeTerms.length) {
+    body.q_not_organization_keyword_tags = excludeTerms;
+    body.organization_not_keyword_tags = excludeTerms;
+  }
 
   const response = await fetch("https://api.apollo.io/api/v1/mixed_companies/search", {
     method: "POST",
@@ -106,15 +120,17 @@ export async function GET(request: Request) {
         url: site,
         domain: domainOf(site || org.primary_domain || ""),
         snippet: [org.short_description, org.industry].filter(Boolean).join(" · "),
+        industry: org.industry || "",
         employees: org.estimated_num_employees ? String(org.estimated_num_employees) : "",
         location: [org.city, org.state, org.country].filter(Boolean).join(", "),
         source: "apollo",
       };
     })
-    .filter((item: { id: string; name: string; domain: string }) => {
+    .filter((item: { id: string; name: string; domain: string; snippet: string; industry: string }) => {
       if (item.id && savedApollo.has(item.id)) return false;
       if (savedNames.has(item.name.trim().toLowerCase())) return false;
       if (item.domain && savedDomains.has(item.domain)) return false;
+      if (blocked(`${item.name} ${item.snippet} ${item.industry}`, excludeTerms)) return false;
       return true;
     });
 
@@ -133,7 +149,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     source: "apollo",
     items,
-    error: items.length ? "" : skipped ? "This page was all companies you already saved. Use Next 100 for a new page." : "Apollo returned no companies for those filters.",
+    error: items.length ? "" : skipped ? "This page was all saved or excluded companies. Use Next 100." : "Apollo returned no companies for those filters.",
     filters,
     skipped,
     fetched: organizations.length,
