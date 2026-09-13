@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 
+const BROWSER =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+
 function decode(value: string) {
   return value
     .replace(/&/g, "&")
@@ -39,7 +42,7 @@ function findAddress(text: string) {
 
 function isParked(html: string, text: string) {
   const blob = `${html} ${text}`.toLowerCase();
-  return /domain is for sale|buy this domain|parked free|sedoparking|godaddy.com\/domain|this domain is registered|coming soon|website is under construction|account suspended|default webpage/.test(blob);
+  return /domain is for sale|buy this domain|parked free|sedoparking|godaddy.com\/domain|this domain is registered|account suspended/.test(blob);
 }
 
 function variants(raw: string) {
@@ -47,8 +50,7 @@ function variants(raw: string) {
     const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
     if (!["http:", "https:"].includes(url.protocol)) return [];
     const host = url.hostname.replace(/^www\./, "");
-    if (host === "localhost" || host.endsWith(".local")) return [];
-    return [`https://${host}`, `https://www.${host}`];
+    return [`https://www.${host}`, `https://${host}`];
   } catch {
     return [];
   }
@@ -56,17 +58,20 @@ function variants(raw: string) {
 
 async function fetchPage(url: string) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: { "User-Agent": "OperatorOS/0.1 research" },
+      headers: {
+        "User-Agent": BROWSER,
+        Accept: "text/html,application/xhtml+xml",
+      },
       redirect: "follow",
     });
     const html = (await response.text()).slice(0, 180000);
-    return { ok: response.ok, finalUrl: response.url || url, html };
-  } catch {
-    return { ok: false, finalUrl: url, html: "" };
+    return { status: response.status, finalUrl: response.url || url, html };
+  } catch (error) {
+    return { status: 0, finalUrl: url, html: "", error: error instanceof Error ? error.message : "failed" };
   } finally {
     clearTimeout(timer);
   }
@@ -97,26 +102,24 @@ export async function POST(request: Request) {
   const attempts: string[] = [];
   for (const seed of seeds) {
     const result = await fetchPage(seed);
-    attempts.push(`${seed} ${result.ok ? "ok" : "failed"}`);
-    if (!result.ok || !result.html) continue;
     const text = pageText(result.html);
-    if (isParked(result.html, text)) {
-      attempts.push(`${seed} parked`);
-      continue;
+    const parked = result.html ? isParked(result.html, text) : false;
+    attempts.push(`${seed} status ${result.status}${parked ? " parked" : ""}${result.error ? ` ${result.error}` : ""}`);
+    if (result.status >= 200 && result.status < 400 && result.html.length > 200 && !parked) {
+      live = { finalUrl: result.finalUrl, html: result.html };
+      break;
     }
-    live = result;
-    break;
   }
 
   if (!live) {
-    const notes = `No working website. Tried ${seeds.join(" and ")}. Both failed to load or look parked.`;
+    const notes = `No working website.\n${attempts.join("\n")}`;
     const patch = { research_notes: notes, researched_at: new Date().toISOString() };
     await supabase.from("contacts").update(patch).eq("id", contact.id);
     return NextResponse.json({ notes, patch, error: notes }, { status: 422 });
   }
 
-  const working = live.finalUrl.replace(/\/$/, "");
-  const origin = new URL(working).origin;
+  const working = live.finalUrl.split("#")[0].replace(/\/$/, "");
+  const origin = new URL(working.startsWith("http") ? working : `https://${working}`).origin;
   const paths = [working, `${origin}/about`, `${origin}/contact`, `${origin}/contact-us`];
   let title = "";
   let description = "";
@@ -124,7 +127,7 @@ export async function POST(request: Request) {
   let blob = "";
 
   for (const path of paths) {
-    const result = path === working ? live : await fetchPage(path);
+    const result = path === working ? { html: live.html } : await fetchPage(path);
     if (!result.html) continue;
     if (!title) title = decode((result.html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").slice(0, 180));
     if (!description) description = decode((result.html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)/i)?.[1] || "").slice(0, 400));
