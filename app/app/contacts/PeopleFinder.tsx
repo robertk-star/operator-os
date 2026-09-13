@@ -55,13 +55,13 @@ export function PeopleFinder({
     const next: Person[] = payload.items || [];
     setItems(next);
     setSelected(Object.fromEntries(next.map((item, index) => [keyFor(item, index), false])));
-    setMessage(next.length ? `Found ${next.length} names. Reveal email only for people you want.` : "No people matched those titles.");
+    setMessage(next.length ? `Found ${next.length} names. Last names fill in after Reveal email.` : "No people matched those titles.");
   }
 
   async function revealSelected() {
-    const chosen = items.filter((item, index) => selected[keyFor(item, index)] && !item.email);
+    const chosen = items.filter((item, index) => selected[keyFor(item, index)]);
     if (!chosen.length) {
-      setMessage("Select people with no email first.");
+      setMessage("Select people first.");
       return;
     }
     setBusy(true);
@@ -80,15 +80,25 @@ export function PeopleFinder({
         }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (payload.person?.email || payload.email) {
-        found += 1;
-        const index = next.findIndex((item) => item.id === person.id || item.full_name === person.full_name);
-        if (index >= 0) next[index] = { ...next[index], email: payload.email || payload.person.email };
-      }
+      const index = next.findIndex((item) => item.id === person.id || item.full_name === person.full_name);
+      if (index < 0) continue;
+      const first = payload.person?.first_name || next[index].first_name;
+      const last = payload.person?.last_name || next[index].last_name;
+      const email = payload.email || payload.person?.email || next[index].email;
+      if (email) found += 1;
+      next[index] = {
+        ...next[index],
+        first_name: first,
+        last_name: last,
+        full_name: [first, last].filter(Boolean).join(" ") || next[index].full_name,
+        email,
+        title: payload.person?.title || next[index].title,
+        linkedin_url: payload.person?.linkedin_url || next[index].linkedin_url,
+      };
     }
     setItems(next);
     setBusy(false);
-    setMessage(`Revealed ${found} of ${chosen.length}. About 1 credit each when Apollo returns an email.`);
+    setMessage(`Updated ${chosen.length}. Emails found: ${found}. About 1 credit each when Apollo returns an email.`);
   }
 
   async function saveSelected() {
