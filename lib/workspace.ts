@@ -14,16 +14,21 @@ export async function getCurrentWorkspace(): Promise<WorkspaceSummary | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data } = await supabase
+  const { data: membership } = await supabase
     .from("workspace_members")
-    .select("role, workspace_id, workspaces(id, name, mode)")
+    .select("role, workspace_id")
     .eq("user_id", user.id)
-    .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();
+  if (!membership?.workspace_id) return null;
 
-  if (!data) return null;
-  const ws = Array.isArray(data.workspaces) ? data.workspaces[0] : data.workspaces;
-  if (!ws) return null;
-  return { id: ws.id, name: ws.name, mode: ws.mode || "personal", role: data.role || "owner" };
+  const { data: workspace } = await supabase.from("workspaces").select("id, name, mode").eq("id", membership.workspace_id).maybeSingle();
+  if (!workspace) return null;
+
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    mode: workspace.mode || "solo",
+    role: membership.role || "owner",
+  };
 }
