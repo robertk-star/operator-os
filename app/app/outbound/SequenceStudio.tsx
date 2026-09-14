@@ -120,7 +120,7 @@ export function SequenceStudio({
     });
   }, [people, audienceTags, tagMatchMode]);
 
-  function loadSequence(sequence: Sequence) {
+  function loadSequence(sequence: Sequence, nextSteps = steps) {
     setSequenceId(sequence.id);
     setName(sequence.name);
     setAudienceTags((sequence.audience_tags || []).join(", ") || sequence.audience || "");
@@ -134,7 +134,7 @@ export function SequenceStudio({
     setPostal(sequence.sender_postal_address || "");
     setUnsub(sequence.unsubscribe_text || "Reply unsubscribe to stop future messages.");
     setMailboxIds(sequence.sending_account_ids || []);
-    const existing = steps.filter((step) => step.sequence_id === sequence.id).sort((a, b) => a.step_order - b.step_order);
+    const existing = nextSteps.filter((step) => step.sequence_id === sequence.id).sort((a, b) => a.step_order - b.step_order);
     setDraftSteps(existing.length ? existing : [{ step_order: 1, delay_days: 0, subject: "", body_text: "" }]);
     setPreview(null);
     setMessage(sequence.last_error || "");
@@ -196,6 +196,58 @@ export function SequenceStudio({
     setMessage("Draft saved.");
   }
 
+  async function copySequence(sequence: Sequence) {
+    setBusy(true);
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("outbound_sequences")
+      .insert({
+        workspace_id: workspaceId,
+        name: sequence.name.endsWith("(copy)") ? sequence.name : `${sequence.name} (copy)`,
+        status: "draft",
+        audience: sequence.audience || "",
+        audience_tags: sequence.audience_tags || [],
+        tag_match_mode: sequence.tag_match_mode || "any",
+        time_zone: sequence.time_zone || "America/Chicago",
+        sending_days: sequence.sending_days || [1, 2, 3, 4, 5],
+        start_hour: sequence.start_hour || "09:00",
+        end_hour: sequence.end_hour || "16:00",
+        min_minutes_between_emails: sequence.min_minutes_between_emails || 15,
+        max_leads_per_day: sequence.max_leads_per_day || 25,
+        sender_postal_address: sequence.sender_postal_address || "",
+        unsubscribe_text: sequence.unsubscribe_text || "Reply unsubscribe to stop future messages.",
+        sending_account_ids: sequence.sending_account_ids || [],
+        external_campaign_id: null,
+        last_error: null,
+      })
+      .select("*")
+      .single();
+    if (error || !data) {
+      setBusy(false);
+      setMessage(error?.message || "Could not copy sequence.");
+      return;
+    }
+    const sourceSteps = steps.filter((step) => step.sequence_id === sequence.id).sort((a, b) => a.step_order - b.step_order);
+    const copiedSteps = sourceSteps.length
+      ? sourceSteps.map((step, index) => ({
+          workspace_id: workspaceId,
+          sequence_id: data.id,
+          step_order: index + 1,
+          delay_days: Number(step.delay_days) || 0,
+          subject: step.subject,
+          body_text: step.body_text,
+        }))
+      : [{ workspace_id: workspaceId, sequence_id: data.id, step_order: 1, delay_days: 0, subject: "", body_text: "" }];
+    const stepSave = await supabase.from("outbound_sequence_steps").insert(copiedSteps).select("id, sequence_id, step_order, delay_days, subject, body_text");
+    const nextSteps = [...(stepSave.data || []), ...steps];
+    setSequences((current) => [data, ...current]);
+    setSteps(nextSteps);
+    setBusy(false);
+    loadSequence(data, nextSteps);
+    setMessage(`Copied “${sequence.name}” into a new draft. Edit it, then activate when ready.`);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function enrollEligible() {
     if (!sequenceId) {
       setMessage("Save the draft first.");
@@ -236,6 +288,8 @@ export function SequenceStudio({
     setMessage(payload.enrolled ? `Active in Smartlead. ${payload.enrolled} leads uploaded.` : `Sequence ${payload.status}.`);
   }
 
+  const selected = sequences.find((item) => item.id === sequenceId);
+
   return (
     <div className="stack wide">
       {!connected ? <p className="meta">Smartlead is not connected. Open Admin, paste the API key, and sync mailboxes first.</p> : null}
@@ -243,9 +297,16 @@ export function SequenceStudio({
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h3>{sequenceId ? "Edit draft" : "New sequence"}</h3>
           {sequenceId ? (
-            <button type="button" className="chip" onClick={resetForm}>
-              Start a new draft
-            </button>
+            <div className="row">
+              {selected ? (
+                <button type="button" className="chip" disabled={busy} onClick={() => void copySequence(selected)}>
+                  Copy this sequence
+                </button>
+              ) : null}
+              <button type="button" className="chip" onClick={resetForm}>
+                Start a new draft
+              </button>
+            </div>
           ) : null}
         </div>
         <div className="form-grid">
@@ -348,6 +409,7 @@ export function SequenceStudio({
               </div>
               <div className="row">
                 <button type="button" className="chip" onClick={() => loadSequence(sequence)}>Edit</button>
+                <button type="button" className="chip" disabled={busy} onClick={() => void copySequence(sequence)}>Copy</button>
                 <button type="button" className="chip" disabled={busy} onClick={() => void control(sequence.id, "activate")}>Activate</button>
                 <button type="button" className="chip" disabled={busy} onClick={() => void control(sequence.id, "pause")}>Pause</button>
                 <button type="button" className="chip" disabled={busy} onClick={() => void control(sequence.id, "stop")}>Stop</button>
