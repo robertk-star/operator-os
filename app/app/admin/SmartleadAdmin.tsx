@@ -55,6 +55,27 @@ export function SmartleadAdmin() {
     return result;
   }
 
+  async function connect() {
+    const result = await run("configure", { connectionMode: mode, apiKey });
+    if (!result) return;
+    setApiKey("");
+    setNotice("Smartlead connected. Connect mailboxes in Smartlead, then sync them here.");
+    await load();
+  }
+
+  async function syncMailboxes() {
+    const result = await run("sync_accounts");
+    if (!result) return;
+    setNotice(`${result.synced} mailboxes synced.`);
+    await load();
+  }
+
+  async function syncReplies() {
+    const result = await run("sync_replies");
+    if (!result) return;
+    setNotice(result.warning || "Reply sync not wired yet.");
+  }
+
   const connected = data?.connection?.status === "connected";
 
   return (
@@ -87,7 +108,7 @@ export function SmartleadAdmin() {
               placeholder={data?.connection?.credentialStored ? "Enter only to replace the stored key" : "Paste API key"}
             />
           </label>
-          <button type="button" disabled={busy === "configure" || !apiKey} onClick={() => void run("configure", { connectionMode: mode, apiKey }).then((result) => { if (result) { setApiKey(""); setNotice("Smartlead connected. Connect mailboxes in Smartlead, then sync them here."); void load(); } })}>
+          <button type="button" disabled={busy === "configure" || !apiKey} onClick={() => void connect()}>
             {busy === "configure" ? "Connecting..." : connected ? "Update connection" : "Connect"}
           </button>
         </div>
@@ -105,10 +126,10 @@ export function SmartleadAdmin() {
             </div>
             <div className="row">
               <a className="chip" href={data?.mailboxSetupUrl} target="_blank" rel="noreferrer">Open Smartlead</a>
-              <button type="button" className="chip" disabled={busy === "sync_replies"} onClick={() => void run("sync_replies").then((result) => result && setNotice(result.warning || "Reply sync not wired yet.")}>
+              <button type="button" className="chip" disabled={busy === "sync_replies"} onClick={() => void syncReplies()}>
                 Sync replies
               </button>
-              <button type="button" disabled={busy === "sync_accounts"} onClick={() => void run("sync_accounts").then((result) => { if (result) { setNotice(`${result.synced} mailboxes synced.`); void load(); } })} style={{ background: "#17243f", color: "#fff", border: 0 }}>
+              <button type="button" disabled={busy === "sync_accounts"} onClick={() => void syncMailboxes()} style={{ background: "#17243f", color: "#fff", border: 0 }}>
                 {busy === "sync_accounts" ? "Syncing..." : "Sync mailboxes"}
               </button>
             </div>
