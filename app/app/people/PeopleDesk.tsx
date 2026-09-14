@@ -67,6 +67,34 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
     setMessage("Saved.");
   }
 
+  async function createContact() {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("contacts")
+      .insert({
+        workspace_id: workspaceId,
+        record_type: "person",
+        full_name: "New contact",
+        first_name: "",
+        last_name: "",
+        status: "active",
+        source: "manual",
+        email_status: "missing",
+        reviewed: false,
+        country: "United States",
+      })
+      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, website, linkedin_url, street_address, city, state, postal_code, country, source, status")
+      .single();
+    if (error || !data) {
+      setMessage(error?.message || "Could not create contact.");
+      return;
+    }
+    setPeople((current) => [data, ...current]);
+    setSelectedId(data.id);
+    setQuery("");
+    setMessage("Fill in the name and email, then tab out to save.");
+  }
+
   async function reveal() {
     if (!selected) return;
     setBusy(true);
@@ -110,6 +138,9 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
           </h2>
           <p className="meta">Name, title, email, tags, and the company they belong to.</p>
         </div>
+        <button type="button" onClick={() => void createContact()}>
+          + New contact
+        </button>
       </div>
       <div className="contacts-split">
         <aside className="contacts-list">
