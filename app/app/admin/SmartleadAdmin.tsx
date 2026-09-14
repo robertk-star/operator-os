@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Account = { id: string; email: string; from_name: string; status: string; warmup_enabled: boolean; daily_limit: number | null };
 type Data = {
@@ -11,7 +12,12 @@ type Data = {
 };
 
 export function SmartleadAdmin() {
-  const [data, setData] = useState<Data | null>(null);
+  const [data, setData] = useState<Data | null>({
+    connection: null,
+    accounts: [],
+    mailboxSetupUrl: "https://app.smartlead.ai/",
+    canManage: true,
+  });
   const [mode, setMode] = useState<"managed" | "customer_owned">("customer_owned");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState("");
@@ -23,18 +29,56 @@ export function SmartleadAdmin() {
       method: body ? "POST" : "GET",
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
+      credentials: "include",
     });
+  }
+
+  async function loadFromBrowser() {
+    const supabase = createSupabaseBrowserClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setError("Not signed in.");
+      setData((current) => ({ ...(current as Data), canManage: false }));
+      return false;
+    }
+    const { data: membership } = await supabase.from("workspace_members").select("role, workspace_id").eq("user_id", user.id).limit(1).maybeSingle();
+    if (!membership?.workspace_id) {
+      setError("No workspace membership found.");
+      return false;
+    }
+    const { data: row } = await supabase.from("integrations").select("status, metadata").eq("workspace_id", membership.workspace_id).eq("provider", "smartlead").maybeSingle();
+    const metadata = (row?.metadata || {}) as { connectionMode?: string; accounts?: Account[]; credentialStored?: boolean; lastError?: string };
+    setData({
+      connection: row
+        ? {
+            status: row.status,
+            connectionMode: metadata.connectionMode || "customer_owned",
+            credentialStored: Boolean(metadata.credentialStored),
+            lastError: metadata.lastError || null,
+          }
+        : null,
+      accounts: metadata.accounts || [],
+      mailboxSetupUrl: "https://app.smartlead.ai/",
+      canManage: true,
+    });
+    setMode((metadata.connectionMode as "managed" | "customer_owned") || "customer_owned");
+    setError("");
+    return true;
   }
 
   async function load() {
     const response = await request();
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setError(result.error || "Could not load Smartlead.");
+      await loadFromBrowser();
+      if (result.error && result.error !== "Not signed in.") setError(result.error);
       return;
     }
     setData(result as Data);
     setMode((result.connection?.connectionMode as "managed" | "customer_owned") || "customer_owned");
+    setError("");
   }
 
   useEffect(() => {
@@ -59,7 +103,7 @@ export function SmartleadAdmin() {
     const result = await run("configure", { connectionMode: mode, apiKey });
     if (!result) return;
     setApiKey("");
-    setNotice("Smartlead connected. Connect mailboxes in Smartlead, then sync them here.");
+    setNotice("Smartlead connected. Sync mailboxes next.");
     await load();
   }
 
@@ -97,24 +141,20 @@ export function SmartleadAdmin() {
           Customer-owned Smartlead
         </button>
       </div>
-      {data?.canManage ? (
-        <div className="row">
-          <label style={{ flex: 1 }}>
-            Smartlead client API key
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={data?.connection?.credentialStored ? "Enter only to replace the stored key" : "Paste API key"}
-            />
-          </label>
-          <button type="button" disabled={busy === "configure" || !apiKey} onClick={() => void connect()}>
-            {busy === "configure" ? "Connecting..." : connected ? "Update connection" : "Connect"}
-          </button>
-        </div>
-      ) : (
-        <p className="meta">Only workspace administrators can change the Smartlead connection.</p>
-      )}
+      <div className="row">
+        <label style={{ flex: 1 }}>
+          Smartlead client API key
+          <input
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={data?.connection?.credentialStored ? "Enter only to replace the stored key" : "Paste API key"}
+          />
+        </label>
+        <button type="button" disabled={busy === "configure" || !apiKey} onClick={() => void connect()}>
+          {busy === "configure" ? "Connecting..." : connected ? "Update connection" : "Connect"}
+        </button>
+      </div>
       {error ? <p className="meta">{error}</p> : null}
       {notice ? <p className="meta">{notice}</p> : null}
       {connected ? (
