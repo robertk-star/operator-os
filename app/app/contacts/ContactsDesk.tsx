@@ -36,7 +36,6 @@ type Contact = {
 };
 
 const PAGE_SIZE = 50;
-const EMAIL_STATUSES = ["unknown", "review_required", "valid", "invalid", "do_not_contact", "missing"];
 
 function orgName(contact: Contact) {
   const value = contact.organizations;
@@ -208,6 +207,11 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
             <button type="button" className={reviewFilter === "reviewed" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("reviewed"); setPage(1); }}>Reviewed queue</button>
           </div>
           <p className="meta">Showing {visible.length} of {filtered.length}</p>
+          {selected ? (
+            <button type="button" className="chip" onClick={() => void remove()}>
+              Delete company
+            </button>
+          ) : null}
           {visible.map((item) => {
             const name = displayName(item);
             const company = orgName(item);
@@ -241,7 +245,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
                 <div className="row">
                   <button type="button" className="chip" onClick={() => void archive()}>{selected.status === "archived" ? "Restore" : "Archive"}</button>
                   <button type="button" className="chip" onClick={() => void save({ status: "staffing" })}>Move to Staffing</button>
-                  <button type="button" className="chip" onClick={() => void remove()}>Delete</button>
+                  <button type="button" className="chip" onClick={() => void remove()}>Delete company</button>
                 </div>
                 <ReviewToggle checked={Boolean(selected.reviewed)} onChange={(next) => void save({ reviewed: next })} />
               </div>
