@@ -20,7 +20,7 @@ export default async function OutboundPage() {
       <p className="kicker">Cold outreach</p>
       <h2>Outbound sequences</h2>
       <p className="meta">Connect Smartlead in Admin, sync mailboxes, pick a mailbox here, then Activate to send.</p>
-      <SequenceKpis sequences={sequences || []} people={people || []} enrollments={enrollments || []} />
+      <SequenceKpis scope="all" sequences={sequences || []} people={people || []} enrollments={enrollments || []} />
       <SequenceStudio
         workspaceId={workspace?.id || ""}
         initialSequences={sequences || []}
