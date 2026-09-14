@@ -48,12 +48,9 @@ export function OperatorShell({
             <p>Workspace</p>
           </div>
         </div>
-        <button className="new-chat" type="button" onClick={() => router.push("/app/email")}>
-          + New conversation
-        </button>
         <nav className="nav">
           {NAV.map(([label, href]) => (
-            <Link key={href} href={href} className={pathname === href ? "active" : undefined}>
+            <Link key={href} href={href} className={pathname === href || pathname.startsWith(`${href}/`) ? "active" : undefined}>
               {label}
             </Link>
           ))}
