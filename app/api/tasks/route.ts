@@ -16,6 +16,19 @@ function legacyStatus(status: string) {
   return "open";
 }
 
+export async function GET() {
+  const workspace = await getCurrentWorkspace();
+  if (!workspace) return NextResponse.json({ tasks: [], error: "Not signed in." }, { status: 401 });
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("id, title, status, due_at, notes, owner_id, created_at, updated_at")
+    .eq("workspace_id", workspace.id)
+    .order("created_at", { ascending: false });
+  if (error) return NextResponse.json({ tasks: [], error: error.message }, { status: 400 });
+  return NextResponse.json({ tasks: data || [], workspace: workspace.name });
+}
+
 export async function POST(request: Request) {
   const workspace = await getCurrentWorkspace();
   if (!workspace) return NextResponse.json({ error: "Not signed in. Refresh and log in again." }, { status: 401 });
@@ -37,8 +50,8 @@ export async function POST(request: Request) {
 
   const requested = String(body.status || "open");
   const id = String(body.id || "");
-  const select = "id, title, status, due_at, notes, created_at, updated_at";
-  const core = {
+  const select = "id, title, status, due_at, notes, owner_id, created_at, updated_at";
+  const row = {
     workspace_id: workspaceId,
     title,
     notes: String(body.description || ""),
@@ -47,31 +60,17 @@ export async function POST(request: Request) {
     owner_id: user.id,
     updated_at: new Date().toISOString(),
   };
-  const full = {
-    ...core,
-    status: ["open", "in_progress", "waiting", "completed", "cancelled", "doing", "done", "stopped"].includes(requested) ? requested : "open",
-    priority: String(body.priority || "normal"),
-    waiting_on: String(body.waitingOn || "") || null,
-    follow_up_date: String(body.followUpDate || "") || null,
-    assigned_to: uuid(body.assignee) || user.id,
-    completed_at: requested === "completed" || requested === "done" ? new Date().toISOString() : null,
-  };
 
-  async function write(row: Record<string, unknown>, columns: string) {
-    return id
-      ? supabase.from("tasks").update(row).eq("id", id).eq("workspace_id", workspaceId).select(columns).maybeSingle()
-      : supabase.from("tasks").insert(row).select(columns).maybeSingle();
-  }
+  const result = id
+    ? await supabase.from("tasks").update(row).eq("id", id).eq("workspace_id", workspaceId).select(select).maybeSingle()
+    : await supabase.from("tasks").insert(row).select(select).maybeSingle();
 
-  let result = await write(full, `${select}, priority, waiting_on, follow_up_date, completed_at, assigned_to, owner_id`);
-  if (result.error) {
-    result = await write(core, select);
-  }
   if (result.error || !result.data) {
     return NextResponse.json(
       { error: result.error?.message || "Could not save task.", code: result.error?.code || null, workspace: workspaceName },
       { status: 400 }
     );
   }
-  return NextResponse.json({ task: result.data, created: !id });
+  const { data: tasks } = await supabase.from("tasks").select(select).eq("workspace_id", workspaceId).order("created_at", { ascending: false });
+  return NextResponse.json({ task: result.data, tasks: tasks || [result.data], created: !id, workspace: workspaceName });
 }
