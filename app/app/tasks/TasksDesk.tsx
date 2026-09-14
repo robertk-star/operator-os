@@ -47,6 +47,9 @@ function dueParts(value: string | null) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   return { dueDate: local.slice(0, 10), dueTime: local.slice(11, 16) };
 }
+function nowParts() {
+  return dueParts(new Date().toISOString());
+}
 
 export function TasksDesk({
   workspaceId,
@@ -125,6 +128,7 @@ export function TasksDesk({
   const filtered = useMemo(() => tasks.filter((task) => inFilter(task, filter)), [tasks, filter, userId]);
 
   function startNew() {
+    const due = nowParts();
     setCreating(true);
     setSelectedId("");
     setFilter("open");
@@ -132,8 +136,8 @@ export function TasksDesk({
     setDescription("");
     setPriority("normal");
     setStatus("open");
-    setDueDate("");
-    setDueTime("");
+    setDueDate(due.dueDate);
+    setDueTime(due.dueTime);
     setWaitingOn("");
     setFollowUpDate("");
     setAssignee(userId);
@@ -142,47 +146,70 @@ export function TasksDesk({
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (!title.trim() || !dueDate || !dueTime || saving) return;
-    setSaving(true);
-    const supabase = createSupabaseBrowserClient();
-    const dueAt = new Date(`${dueDate}T${dueTime}:00`).toISOString();
-    const row = {
-      workspace_id: workspaceId,
-      title: title.trim(),
-      notes: description,
-      status,
-      priority,
-      due_at: dueAt,
-      waiting_on: waitingOn || null,
-      follow_up_date: followUpDate || null,
-      assigned_to: assignee || userId,
-      owner_id: userId || null,
-      completed_at: status === "completed" ? new Date().toISOString() : null,
-      updated_at: new Date().toISOString(),
-    };
-    const result = creating || !selectedId
-      ? await supabase.from("tasks").insert(row).select("id, title, status, due_at, notes, priority, waiting_on, follow_up_date, completed_at, assigned_to, owner_id, created_at, updated_at").single()
-      : await supabase.from("tasks").update(row).eq("id", selectedId).select("id, title, status, due_at, notes, priority, waiting_on, follow_up_date, completed_at, assigned_to, owner_id, created_at, updated_at").single();
-    setSaving(false);
-    if (result.error || !result.data) {
-      setMessage(result.error?.message || "Run the tasks SQL if a column is missing.");
+    if (!title.trim()) {
+      setMessage("Title is required.");
       return;
     }
-    setTasks((current) => creating || !selectedId ? [result.data, ...current] : current.map((item) => (item.id === result.data.id ? result.data : item)));
+    if (!dueDate || !dueTime) {
+      setMessage("Due date and due time are required.");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    const response = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        id: creating ? "" : selectedId,
+        title,
+        description,
+        priority,
+        status,
+        dueDate,
+        dueTime,
+        waitingOn,
+        followUpDate,
+        assignee: assignee || userId,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setSaving(false);
+    if (!response.ok || !payload.task) {
+      setMessage(payload.error || "Could not save task.");
+      return;
+    }
+    setTasks((current) => payload.created ? [payload.task, ...current] : current.map((item) => (item.id === payload.task.id ? payload.task : item)));
     setCreating(false);
-    setSelectedId(result.data.id);
-    setMessage(creating ? "Task created." : "Task updated.");
+    setSelectedId(payload.task.id);
+    setMessage(payload.created ? "Task created." : "Task updated.");
   }
 
   async function setTaskStatus(next: Status) {
     if (!selected) return;
-    const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.from("tasks").update({ status: next, completed_at: next === "completed" ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("id", selected.id);
-    if (error) {
-      setMessage(error.message);
+    const response = await fetch("/api/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        id: selected.id,
+        title: selected.title,
+        description: selected.notes || "",
+        priority: selected.priority || "normal",
+        status: next,
+        dueDate: dueDate || dueParts(selected.due_at).dueDate,
+        dueTime: dueTime || dueParts(selected.due_at).dueTime || "09:00",
+        waitingOn: selected.waiting_on || "",
+        followUpDate: selected.follow_up_date || "",
+        assignee: selected.assigned_to || userId,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(payload.error || "Could not update status.");
       return;
     }
-    setTasks((current) => current.map((item) => (item.id === selected.id ? { ...item, status: next } : item)));
+    setTasks((current) => current.map((item) => (item.id === payload.task.id ? payload.task : item)));
     setStatus(next);
     setMessage(next === "completed" ? "Task completed." : "Task reopened.");
   }
