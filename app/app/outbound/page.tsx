@@ -18,7 +18,7 @@ export default async function OutboundPage() {
     <section className="main">
       <p className="kicker">Cold outreach</p>
       <h2>Outbound sequences</h2>
-      <p className="meta">Build the emails here. Enroll people from Contacts who already have an email. Sending through Gmail comes next.</p>
+      <p className="meta">Connect Smartlead in Admin, sync mailboxes, pick a mailbox here, then Activate to send.</p>
       <SequenceStudio
         workspaceId={workspace?.id || ""}
         initialSequences={sequences || []}
