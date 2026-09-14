@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Sequence = {
@@ -18,6 +18,9 @@ type Sequence = {
   max_leads_per_day?: number | null;
   unsubscribe_text?: string | null;
   sender_postal_address?: string | null;
+  sending_account_ids?: string[] | null;
+  external_campaign_id?: string | null;
+  last_error?: string | null;
 };
 type Step = { id?: string; sequence_id?: string; step_order: number; delay_days: number; subject: string; body_text: string };
 type Person = {
@@ -37,6 +40,7 @@ type Enrollment = {
   status: string;
   contacts?: { full_name: string; email: string | null } | { full_name: string; email: string | null }[] | null;
 };
+type Mailbox = { id: string; email: string; from_name?: string; status?: string };
 
 const DAYS = [
   { id: 1, label: "Mon" },
@@ -89,8 +93,22 @@ export function SequenceStudio({
   const [postal, setPostal] = useState("");
   const [unsub, setUnsub] = useState("Reply unsubscribe to stop future messages.");
   const [draftSteps, setDraftSteps] = useState<Step[]>([{ step_order: 1, delay_days: 0, subject: "", body_text: "" }]);
+  const [mailboxIds, setMailboxIds] = useState<string[]>([]);
+  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [connected, setConnected] = useState(false);
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState<{ total: number; eligible: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void fetch("/api/smartlead")
+      .then((response) => response.json())
+      .then((payload) => {
+        setConnected(payload.connection?.status === "connected");
+        setMailboxes(payload.accounts || []);
+      })
+      .catch(() => setConnected(false));
+  }, []);
 
   const wantedTags = audienceTags.split(/[;,]/).map((item) => item.trim().toLowerCase()).filter(Boolean);
   const eligible = useMemo(() => {
@@ -115,16 +133,18 @@ export function SequenceStudio({
     setDailyLimit(sequence.max_leads_per_day || 25);
     setPostal(sequence.sender_postal_address || "");
     setUnsub(sequence.unsubscribe_text || "Reply unsubscribe to stop future messages.");
+    setMailboxIds(sequence.sending_account_ids || []);
     const existing = steps.filter((step) => step.sequence_id === sequence.id).sort((a, b) => a.step_order - b.step_order);
     setDraftSteps(existing.length ? existing : [{ step_order: 1, delay_days: 0, subject: "", body_text: "" }]);
     setPreview(null);
-    setMessage("");
+    setMessage(sequence.last_error || "");
   }
 
   function resetForm() {
     setSequenceId("");
     setName("");
     setAudienceTags("");
+    setMailboxIds([]);
     setDraftSteps([{ step_order: 1, delay_days: 0, subject: "", body_text: "" }]);
     setPreview(null);
   }
@@ -150,6 +170,7 @@ export function SequenceStudio({
       max_leads_per_day: dailyLimit,
       sender_postal_address: postal,
       unsubscribe_text: unsub,
+      sending_account_ids: mailboxIds,
     };
     const saved = sequenceId
       ? await supabase.from("outbound_sequences").update(row).eq("id", sequenceId).select("*").single()
@@ -195,22 +216,29 @@ export function SequenceStudio({
         setQueued((current) => [data, ...current]);
       }
     }
-    setMessage(`Queued ${added} contacts with emails. Gmail send is next.`);
+    setMessage(`Queued ${added} contacts locally. Activate to push them into Smartlead.`);
   }
 
-  async function setStatus(id: string, status: string) {
-    const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.from("outbound_sequences").update({ status }).eq("id", id);
-    if (error) {
-      setMessage(error.message);
+  async function control(id: string, action: string) {
+    setBusy(true);
+    const response = await fetch("/api/outbound/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sequenceId: id, action }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setBusy(false);
+    if (!response.ok) {
+      setMessage(payload.error || "Smartlead request failed.");
       return;
     }
-    setSequences((current) => current.map((item) => (item.id === id ? { ...item, status } : item)));
-    setMessage(`Sequence ${status}.`);
+    setSequences((current) => current.map((item) => (item.id === id ? { ...item, status: payload.status || action, external_campaign_id: payload.campaignId || item.external_campaign_id } : item)));
+    setMessage(payload.enrolled ? `Active in Smartlead. ${payload.enrolled} leads uploaded.` : `Sequence ${payload.status}.`);
   }
 
   return (
     <div className="stack wide">
+      {!connected ? <p className="meta">Smartlead is not connected. Open Admin, paste the API key, and sync mailboxes first.</p> : null}
       <div className="card stack">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h3>{sequenceId ? "Edit draft" : "New sequence"}</h3>
@@ -235,6 +263,22 @@ export function SequenceStudio({
           <label>Minutes apart<input type="number" min={1} value={gap} onChange={(e) => setGap(Number(e.target.value))} /></label>
           <label>Start<input type="time" value={startHour} onChange={(e) => setStartHour(e.target.value)} /></label>
           <label>End<input type="time" value={endHour} onChange={(e) => setEndHour(e.target.value)} /></label>
+        </div>
+        <div>
+          <p className="meta">Sending mailboxes</p>
+          <div className="row">
+            {mailboxes.map((account) => (
+              <label key={account.id} className="chip">
+                <input
+                  type="checkbox"
+                  checked={mailboxIds.includes(String(account.id))}
+                  onChange={() => setMailboxIds((current) => (current.includes(String(account.id)) ? current.filter((item) => item !== String(account.id)) : [...current, String(account.id)]))}
+                />
+                {account.email}
+              </label>
+            ))}
+          </div>
+          {!mailboxes.length ? <p className="meta">No mailboxes synced. Use Admin → Sync mailboxes.</p> : null}
         </div>
         <div>
           <p className="meta">Sending days</p>
@@ -286,6 +330,9 @@ export function SequenceStudio({
           <button type="button" className="chip" onClick={() => void enrollEligible()}>
             Enroll eligible contacts
           </button>
+          <button type="button" disabled={busy || !sequenceId} onClick={() => void control(sequenceId, "activate")}>
+            {busy ? "Publishing..." : "Activate in Smartlead"}
+          </button>
         </div>
         {preview ? <p className="meta">{preview.eligible} eligible of {preview.total} people with emails.</p> : null}
         {message ? <p className="meta">{message}</p> : null}
@@ -297,15 +344,16 @@ export function SequenceStudio({
             <div className="row" style={{ justifyContent: "space-between" }}>
               <div>
                 <strong>{sequence.name}</strong>
-                <div className="meta">{sequence.status} · {queued.filter((row) => row.sequence_id === sequence.id).length} queued</div>
+                <div className="meta">{sequence.status} · {queued.filter((row) => row.sequence_id === sequence.id).length} queued{sequence.external_campaign_id ? ` · Smartlead ${sequence.external_campaign_id}` : ""}</div>
               </div>
               <div className="row">
                 <button type="button" className="chip" onClick={() => loadSequence(sequence)}>Edit</button>
-                <button type="button" className="chip" onClick={() => void setStatus(sequence.id, "active")}>Activate</button>
-                <button type="button" className="chip" onClick={() => void setStatus(sequence.id, "paused")}>Pause</button>
-                <button type="button" className="chip" onClick={() => void setStatus(sequence.id, "stopped")}>Stop</button>
+                <button type="button" className="chip" disabled={busy} onClick={() => void control(sequence.id, "activate")}>Activate</button>
+                <button type="button" className="chip" disabled={busy} onClick={() => void control(sequence.id, "pause")}>Pause</button>
+                <button type="button" className="chip" disabled={busy} onClick={() => void control(sequence.id, "stop")}>Stop</button>
               </div>
             </div>
+            {sequence.last_error ? <p className="meta">{sequence.last_error}</p> : null}
             <ul className="record-list">
               {queued.filter((row) => row.sequence_id === sequence.id).map((row) => (
                 <li key={row.id}>{enrollmentLabel(row)} · {row.status}</li>
