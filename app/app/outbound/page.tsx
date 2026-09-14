@@ -1,30 +1,29 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
-import { SequenceBoard } from "./SequenceBoard";
+import { SequenceStudio } from "./SequenceStudio";
 
 export default async function OutboundPage() {
   const workspace = await getCurrentWorkspace();
   const supabase = await createSupabaseServerClient();
-  const [{ data: sequences }, { data: contacts }, { data: enrollments }, { data: settings }] = workspace
+  const [{ data: sequences }, { data: steps }, { data: people }, { data: enrollments }] = workspace
     ? await Promise.all([
-        supabase.from("outbound_sequences").select("id, name, audience, status").eq("workspace_id", workspace.id).order("created_at", { ascending: false }),
-        supabase.from("contacts").select("id, full_name, email").eq("workspace_id", workspace.id).order("full_name"),
+        supabase.from("outbound_sequences").select("*").eq("workspace_id", workspace.id).order("created_at", { ascending: false }),
+        supabase.from("outbound_sequence_steps").select("id, sequence_id, step_order, delay_days, subject, body_text").eq("workspace_id", workspace.id).order("step_order"),
+        supabase.from("contacts").select("id, full_name, first_name, last_name, email, job_title, business_name, tags, record_type").eq("workspace_id", workspace.id).eq("record_type", "person").order("full_name"),
         supabase.from("sequence_enrollments").select("id, sequence_id, contact_id, status, contacts(full_name, email)").eq("workspace_id", workspace.id),
-        supabase.from("integrations").select("metadata").eq("workspace_id", workspace.id).eq("provider", "workspace").maybeSingle(),
       ])
-    : [{ data: [] }, { data: [] }, { data: [] }, { data: null }];
-  const targets = ((settings?.metadata as { revenueTargets?: string } | null)?.revenueTargets || "").trim();
+    : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   return (
     <section className="main">
-      <p className="kicker">Outbound sequences</p>
+      <p className="kicker">Cold outreach</p>
       <h2>Outbound sequences</h2>
-      <p className="meta">Sequences start empty. Enroll contacts. This does not send Gmail yet.</p>
-      {targets ? <p className="meta">Revenue targets: {targets}</p> : <p className="meta">Set Revenue Engine targets in Settings so sequences have an audience definition.</p>}
-      <SequenceBoard
+      <p className="meta">Build the emails here. Enroll people from Contacts who already have an email. Sending through Gmail comes next.</p>
+      <SequenceStudio
         workspaceId={workspace?.id || ""}
         initialSequences={sequences || []}
-        contacts={contacts || []}
+        initialSteps={steps || []}
+        people={people || []}
         enrollments={enrollments || []}
       />
     </section>
