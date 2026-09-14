@@ -146,11 +146,6 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
         <aside className="contacts-list">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, company, email, tag..." />
           <p className="meta">Showing {filtered.length}</p>
-          {selected ? (
-            <button type="button" className="chip" onClick={() => void remove()}>
-              Delete contact
-            </button>
-          ) : null}
           {filtered.map((item) => (
             <button key={item.id} type="button" className={item.id === selectedId ? "contact-row selected" : "contact-row"} onClick={() => setSelectedId(item.id)}>
               <strong>{displayName(item)}</strong>
@@ -177,7 +172,7 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
                 <button type="button" disabled={busy} onClick={() => void reveal()} style={{ background: "#17243f", color: "#fff", border: 0 }}>
                   {busy ? "Revealing..." : "Reveal email"}
                 </button>
-                <button type="button" className="chip" onClick={() => void remove()}>Delete contact</button>
+                <button type="button" className="chip" onClick={() => void remove()}>Delete</button>
               </div>
               <div className="form-grid">
                 <label>First name<input value={selected.first_name || ""} onChange={(e) => save({ first_name: e.target.value })} /></label>
