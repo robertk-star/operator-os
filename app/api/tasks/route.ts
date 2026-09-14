@@ -10,7 +10,8 @@ function uuid(value: unknown) {
 function legacyStatus(status: string) {
   if (status === "in_progress") return "doing";
   if (status === "completed") return "done";
-  if (status === "cancelled" || status === "waiting") return status === "waiting" ? "open" : "stopped";
+  if (status === "cancelled") return "stopped";
+  if (status === "waiting") return "open";
   if (["open", "doing", "done", "stopped"].includes(status)) return status;
   return "open";
 }
@@ -18,6 +19,8 @@ function legacyStatus(status: string) {
 export async function POST(request: Request) {
   const workspace = await getCurrentWorkspace();
   if (!workspace) return NextResponse.json({ error: "Not signed in. Refresh and log in again." }, { status: 401 });
+  const workspaceId = workspace.id;
+  const workspaceName = workspace.name;
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -36,7 +39,7 @@ export async function POST(request: Request) {
   const id = String(body.id || "");
   const select = "id, title, status, due_at, notes, created_at, updated_at";
   const core = {
-    workspace_id: workspace.id,
+    workspace_id: workspaceId,
     title,
     notes: String(body.description || ""),
     status: legacyStatus(requested),
@@ -56,7 +59,7 @@ export async function POST(request: Request) {
 
   async function write(row: Record<string, unknown>, columns: string) {
     return id
-      ? supabase.from("tasks").update(row).eq("id", id).eq("workspace_id", workspace.id).select(columns).maybeSingle()
+      ? supabase.from("tasks").update(row).eq("id", id).eq("workspace_id", workspaceId).select(columns).maybeSingle()
       : supabase.from("tasks").insert(row).select(columns).maybeSingle();
   }
 
@@ -66,7 +69,7 @@ export async function POST(request: Request) {
   }
   if (result.error || !result.data) {
     return NextResponse.json(
-      { error: result.error?.message || "Could not save task.", code: result.error?.code || null, workspace: workspace.name },
+      { error: result.error?.message || "Could not save task.", code: result.error?.code || null, workspace: workspaceName },
       { status: 400 }
     );
   }
