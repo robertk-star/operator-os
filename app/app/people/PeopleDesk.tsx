@@ -13,6 +13,7 @@ type Person = {
   business_name?: string | null;
   job_title?: string | null;
   industry?: string | null;
+  tags?: string[] | null;
   website?: string | null;
   linkedin_url?: string | null;
   street_address?: string | null;
@@ -47,7 +48,7 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
     return people.filter((item) => {
       if ((item.status || "active") === "archived") return false;
       if (!term) return true;
-      return [displayName(item), companyName(item), item.email, item.job_title].join(" ").toLowerCase().includes(term);
+      return [displayName(item), companyName(item), item.email, item.job_title, ...(item.tags || [])].join(" ").toLowerCase().includes(term);
     });
   }, [people, query]);
 
@@ -107,18 +108,19 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
           <h2>
             Contacts <span className="badge">People</span>
           </h2>
-          <p className="meta">Name, title, email, and the company they belong to. Drip selection comes next.</p>
+          <p className="meta">Name, title, email, tags, and the company they belong to.</p>
         </div>
       </div>
       <div className="contacts-split">
         <aside className="contacts-list">
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, company, email..." />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, company, email, tag..." />
           <p className="meta">Showing {filtered.length}</p>
           {filtered.map((item) => (
             <button key={item.id} type="button" className={item.id === selectedId ? "contact-row selected" : "contact-row"} onClick={() => setSelectedId(item.id)}>
               <strong>{displayName(item)}</strong>
               <span>{companyName(item)}</span>
               <small>{item.email || item.job_title || ""}</small>
+              {(item.tags || []).length ? <em>{(item.tags || []).join(", ")}</em> : null}
             </button>
           ))}
         </aside>
@@ -151,6 +153,14 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
                 <label>Company<input value={selected.business_name || companyName(selected)} onChange={(e) => save({ business_name: e.target.value })} /></label>
                 <label>Industry<input value={selected.industry || ""} onChange={(e) => save({ industry: e.target.value })} /></label>
                 <label>Website<input value={selected.website || ""} onChange={(e) => save({ website: e.target.value })} /></label>
+                <label>
+                  Tags
+                  <input
+                    value={(selected.tags || []).join(", ")}
+                    onChange={(e) => save({ tags: e.target.value.split(",").map((item) => item.trim()).filter(Boolean) })}
+                    placeholder="hr, benefits, drip"
+                  />
+                </label>
               </div>
               <div className="form-grid">
                 <label>Street address<input value={selected.street_address || ""} onChange={(e) => save({ street_address: e.target.value })} /></label>
