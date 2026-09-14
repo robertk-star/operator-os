@@ -20,7 +20,8 @@ export default async function SettingsPage() {
   return (
     <section className="main">
       <p className="kicker">Settings</p>
-      <h2>Settings</h2>
+      <h2>Apollo Leads Settings</h2>
+      <p className="meta">These filters control Find companies in Revenue Engine. Smartlead lives in Admin.</p>
       <SettingsForm
         workspaceId={workspace?.id || ""}
         workspaceName={workspace?.name || ""}
