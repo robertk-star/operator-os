@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
 import { AdminPanel } from "./AdminPanel";
+import { SmartleadAdmin } from "./SmartleadAdmin";
 
 export default async function AdminPage() {
   const workspace = await getCurrentWorkspace();
@@ -23,6 +24,7 @@ export default async function AdminPage() {
       <p className="meta">
         {workspace?.name} · {workspace?.mode} · your role {workspace?.role}
       </p>
+      <SmartleadAdmin />
       <AdminPanel
         workspaceId={workspace?.id || ""}
         canInvite={workspace?.mode === "team" && (workspace?.role === "owner" || workspace?.role === "admin")}
