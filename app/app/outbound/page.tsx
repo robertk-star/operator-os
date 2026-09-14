@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace } from "@/lib/workspace";
+import { SequenceKpis } from "./SequenceKpis";
 import { SequenceStudio } from "./SequenceStudio";
 
 export default async function OutboundPage() {
@@ -19,6 +20,7 @@ export default async function OutboundPage() {
       <p className="kicker">Cold outreach</p>
       <h2>Outbound sequences</h2>
       <p className="meta">Connect Smartlead in Admin, sync mailboxes, pick a mailbox here, then Activate to send.</p>
+      <SequenceKpis sequences={sequences || []} people={people || []} enrollments={enrollments || []} />
       <SequenceStudio
         workspaceId={workspace?.id || ""}
         initialSequences={sequences || []}
