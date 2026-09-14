@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { GOOGLE_USER_SCOPES } from "@/lib/googleAuth";
 
 type MailItem = { id: string; subject: string; from: string; date: string; snippet: string };
 type Turn = { role: "assistant" | "user"; text: string };
@@ -53,6 +51,10 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
   ]);
 
   useEffect(() => {
+    const google = searchParams.get("google");
+    if (google === "denied") setError("Google access was cancelled.");
+    if (google === "token_failed") setError("Google did not return a mailbox token. Try Add Gmail again.");
+    if (google === "connected") setError("");
     fetch("/api/gmail/messages")
       .then((response) => response.json())
       .then((payload) => {
@@ -60,24 +62,15 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
         setEmail(payload.email || "");
         setUnread(payload.unread || []);
         setReply(payload.reply || []);
-        setError(payload.error || "");
+        if (payload.error) setError(payload.error);
       })
       .catch(() => setError("Could not reach Gmail."));
   }, [workspaceId, searchParams]);
 
   const selected = results.find((item) => item.id === selectedId) || null;
 
-  async function addGmail() {
-    const supabase = createSupabaseBrowserClient();
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/app/email`,
-        scopes: GOOGLE_USER_SCOPES,
-        queryParams: { access_type: "offline", prompt: "select_account" },
-      },
-    });
-    if (oauthError) setTurns((current) => [...current, { role: "assistant", text: oauthError.message }]);
+  function addGmail() {
+    window.location.assign("/api/google/start");
   }
 
   function showResults(label: string, items: MailItem[], userText: string) {
@@ -267,7 +260,7 @@ export function GmailWorkspace({ workspaceId }: { workspaceId: string }) {
           <p className="kicker">Gmail account</p>
           <p>{status === "connected" ? email || "Connected" : "No Gmail connected."}</p>
           <button type="button" className="chip" onClick={addGmail}>
-            {status === "connected" ? "Use a different Gmail" : "Add Gmail"}
+            {status === "connected" ? "Add another Gmail" : "Add Gmail"}
           </button>
         </div>
         <div className="card">
