@@ -1,4 +1,7 @@
 export const GOOGLE_SCOPES = [
+  "openid",
+  "email",
+  "profile",
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.compose",
   "https://www.googleapis.com/auth/calendar.readonly",
@@ -21,7 +24,8 @@ export function googleAuthorizeUrl(state: string) {
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", GOOGLE_SCOPES);
   url.searchParams.set("access_type", "offline");
-  url.searchParams.set("prompt", "consent");
+  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("prompt", "select_account consent");
   url.searchParams.set("state", state);
   return url.toString();
 }
