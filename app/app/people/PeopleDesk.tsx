@@ -42,6 +42,7 @@ function displayName(person: Person) {
 export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: string; initialContacts: Person[] }) {
   const [people, setPeople] = useState(initialContacts);
   const [query, setQuery] = useState("");
+  const [dripFilter, setDripFilter] = useState<"all" | "in" | "out">("all");
   const [selectedId, setSelectedId] = useState(initialContacts[0]?.id || "");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,10 +52,12 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
     const term = query.trim().toLowerCase();
     return people.filter((item) => {
       if ((item.status || "active") === "archived") return false;
+      if (dripFilter === "in" && !item.drip_enrolled) return false;
+      if (dripFilter === "out" && item.drip_enrolled) return false;
       if (!term) return true;
       return [displayName(item), companyName(item), item.email, item.job_title, ...(item.tags || [])].join(" ").toLowerCase().includes(term);
     });
-  }, [people, query]);
+  }, [people, query, dripFilter]);
 
   async function save(patch: Partial<Person>) {
     if (!selected) return;
@@ -149,13 +152,18 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
       <div className="contacts-split">
         <aside className="contacts-list">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, company, email, tag..." />
+          <div className="row">
+            <button type="button" className={dripFilter === "all" ? "kpi-dark chip" : "chip"} onClick={() => setDripFilter("all")}>All</button>
+            <button type="button" className={dripFilter === "in" ? "kpi-dark chip" : "chip"} onClick={() => setDripFilter("in")}>In drip campaign</button>
+            <button type="button" className={dripFilter === "out" ? "kpi-dark chip" : "chip"} onClick={() => setDripFilter("out")}>Not in a drip campaign</button>
+          </div>
           <p className="meta">Showing {filtered.length}</p>
           {filtered.map((item) => (
             <button key={item.id} type="button" className={item.id === selectedId ? "contact-row selected" : "contact-row"} onClick={() => setSelectedId(item.id)}>
               <strong>{displayName(item)}</strong>
               <span>{companyName(item)}</span>
               <small>{item.email || item.job_title || ""}</small>
-              {item.drip_enrolled ? <em>Enrolled · {item.drip_sequence_name}</em> : (item.tags || []).length ? <em>{(item.tags || []).join(", ")}</em> : null}
+              {item.drip_enrolled ? <em>Enrolled \u00b7 {item.drip_sequence_name}</em> : (item.tags || []).length ? <em>{(item.tags || []).join(", ")}</em> : null}
             </button>
           ))}
         </aside>
