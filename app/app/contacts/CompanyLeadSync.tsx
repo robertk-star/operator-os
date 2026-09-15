@@ -20,13 +20,13 @@ export function CompanyLeadSync({
     async function load() {
       if (!workspaceId) return;
       const supabase = createSupabaseBrowserClient();
-      const { data } = await supabase.from("contacts").select(SELECT).eq("workspace_id", workspaceId).eq("record_type", "company").order("full_name");
+      const { data } = await supabase.from("contacts").select(SELECT).eq("workspace_id", workspaceId).eq("record_type", "company").neq("status", "drip_complete").order("full_name");
       if (data) onLoadRef.current(data);
     }
     void load();
     const onFocus = () => void load();
     window.addEventListener("focus", onFocus);
-    const timer = window.setInterval(() => void load(), 15000);
+    const timer = window.setInterval(() => void load(), 8000);
     return () => {
       window.removeEventListener("focus", onFocus);
       window.clearInterval(timer);
