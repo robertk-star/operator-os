@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { EnrollDrip } from "./EnrollDrip";
 
 type Person = {
   id: string;
@@ -23,6 +24,9 @@ type Person = {
   country?: string | null;
   source?: string | null;
   status?: string | null;
+  drip_enrolled?: boolean | null;
+  drip_sequence_id?: string | null;
+  drip_sequence_name?: string | null;
   organizations?: { name?: string; domain?: string } | { name?: string; domain?: string }[] | null;
 };
 
@@ -83,7 +87,7 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
         reviewed: false,
         country: "United States",
       })
-      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, website, linkedin_url, street_address, city, state, postal_code, country, source, status")
+      .select("id, full_name, first_name, last_name, email, phone, business_name, job_title, industry, tags, website, linkedin_url, street_address, city, state, postal_code, country, source, status, drip_enrolled, drip_sequence_id, drip_sequence_name")
       .single();
     if (error || !data) {
       setMessage(error?.message || "Could not create contact.");
@@ -151,7 +155,7 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
               <strong>{displayName(item)}</strong>
               <span>{companyName(item)}</span>
               <small>{item.email || item.job_title || ""}</small>
-              {(item.tags || []).length ? <em>{(item.tags || []).join(", ")}</em> : null}
+              {item.drip_enrolled ? <em>Enrolled · {item.drip_sequence_name}</em> : (item.tags || []).length ? <em>{(item.tags || []).join(", ")}</em> : null}
             </button>
           ))}
         </aside>
@@ -200,6 +204,14 @@ export function PeopleDesk({ workspaceId, initialContacts }: { workspaceId: stri
                 <label>Postal code<input value={selected.postal_code || ""} onChange={(e) => save({ postal_code: e.target.value })} /></label>
                 <label>Country<input value={selected.country || ""} onChange={(e) => save({ country: e.target.value })} /></label>
               </div>
+              <EnrollDrip
+                contactId={selected.id}
+                email={selected.email}
+                enrolledName={selected.drip_sequence_name}
+                onEnrolled={(name, sequenceId) => {
+                  setPeople((current) => current.map((item) => (item.id === selected.id ? { ...item, drip_enrolled: true, drip_sequence_id: sequenceId, drip_sequence_name: name } : item)));
+                }}
+              />
               {message ? <p className="meta">{message}</p> : null}
             </>
           ) : (
