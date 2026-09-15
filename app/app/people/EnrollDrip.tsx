@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type Sequence = { id: string; name: string; status: string };
 type Enrollment = { id: string; sequence_id: string; contact_id: string; status: string };
@@ -14,8 +15,9 @@ export function EnrollDrip({
   contactId: string;
   email?: string | null;
   enrolledName?: string | null;
-  onEnrolled: (name: string, sequenceId: string) => void;
+  onEnrolled: (name: string, sequenceId: string, companyComplete: boolean) => void;
 }) {
+  const router = useRouter();
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [sequenceId, setSequenceId] = useState("");
@@ -67,8 +69,15 @@ export function EnrollDrip({
     if (payload.enrollment) {
       setEnrollments((current) => [payload.enrollment, ...current.filter((item) => item.id !== payload.enrollment.id)]);
     }
-    onEnrolled(payload.sequence?.name || "Campaign", sequenceId);
-    setMessage(payload.already ? `Already enrolled in ${payload.sequence?.name}.` : `Enrolled in ${payload.sequence?.name}.`);
+    onEnrolled(payload.sequence?.name || "Campaign", sequenceId, Boolean(payload.companyComplete));
+    router.refresh();
+    setMessage(
+      payload.companyComplete
+        ? `Enrolled in ${payload.sequence?.name}. Company removed from Find contacts.`
+        : payload.already
+          ? `Already enrolled in ${payload.sequence?.name}.`
+          : `Enrolled in ${payload.sequence?.name}.`
+    );
   }
 
   return (
@@ -81,7 +90,7 @@ export function EnrollDrip({
           {mine.map((item) => {
             const name = sequences.find((sequence) => sequence.id === item.sequence_id)?.name || "Campaign";
             return `${name} (${item.status})`;
-          }).join(" · ")}
+          }).join(" \u00b7 ")}
         </p>
       ) : null}
       <label>
