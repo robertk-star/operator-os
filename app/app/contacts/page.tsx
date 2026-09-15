@@ -8,11 +8,9 @@ const SELECT =
 export default async function ContactsPage() {
   const workspace = await getCurrentWorkspace();
   const supabase = await createSupabaseServerClient();
-  let query = workspace
-    ? supabase.from("contacts").select(SELECT).eq("workspace_id", workspace.id).order("full_name")
-    : null;
-  if (query) query = query.eq("record_type", "company");
-  const { data: contacts } = query ? await query : { data: [] };
+  const { data: contacts } = workspace
+    ? await supabase.from("contacts").select(SELECT).eq("workspace_id", workspace.id).eq("record_type", "company").neq("status", "drip_complete").order("full_name")
+    : { data: [] };
 
   return (
     <section className="main contacts-main">
