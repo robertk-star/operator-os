@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const SELECT =
@@ -13,12 +13,15 @@ export function CompanyLeadSync({
   workspaceId: string;
   onLoad: (rows: unknown[]) => void;
 }) {
+  const onLoadRef = useRef(onLoad);
+  onLoadRef.current = onLoad;
+
   useEffect(() => {
     async function load() {
       if (!workspaceId) return;
       const supabase = createSupabaseBrowserClient();
       const { data } = await supabase.from("contacts").select(SELECT).eq("workspace_id", workspaceId).eq("record_type", "company").order("full_name");
-      if (data) onLoad(data);
+      if (data) onLoadRef.current(data);
     }
     void load();
     const onFocus = () => void load();
@@ -28,6 +31,6 @@ export function CompanyLeadSync({
       window.removeEventListener("focus", onFocus);
       window.clearInterval(timer);
     };
-  }, [workspaceId, onLoad]);
+  }, [workspaceId]);
   return null;
 }
