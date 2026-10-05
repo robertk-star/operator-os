@@ -17,6 +17,7 @@ function profilesFrom(metadata: Record<string, unknown>): ApolloProfile[] {
       industries: String(metadata.industries || ""),
       excludeKeywords: String(metadata.excludeKeywords || "staffing, recruiting, recruiter, talent agency, employment agency"),
       excludeIndustries: String(metadata.excludeIndustries || "Staffing & Recruiting"),
+      personTitles: String(metadata.personTitles || "CEO; President; CFO; Director of HR; HR Director; Benefits Coordinator; Benefits Manager"),
     },
   ];
 }
@@ -32,7 +33,7 @@ export default async function SettingsPage() {
     <section className="main">
       <p className="kicker">Settings</p>
       <h2>Apollo Leads Settings</h2>
-      <p className="meta">Create a search profile for each kind of company you want. Revenue Engine lets you pick one before Find companies.</p>
+      <p className="meta">Create a search profile for each kind of company you want. Find Companies lets you pick one before you search.</p>
       <SettingsForm workspaceId={workspace?.id || ""} workspaceName={workspace?.name || ""} profiles={profiles} />
     </section>
   );
