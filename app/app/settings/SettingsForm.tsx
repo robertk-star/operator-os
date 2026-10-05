@@ -13,6 +13,7 @@ export type ApolloProfile = {
   industries: string;
   excludeKeywords: string;
   excludeIndustries: string;
+  personTitles: string;
 };
 
 function blankProfile(name = ""): ApolloProfile {
@@ -26,6 +27,7 @@ function blankProfile(name = ""): ApolloProfile {
     industries: "",
     excludeKeywords: "staffing, recruiting, recruiter, talent agency, employment agency",
     excludeIndustries: "Staffing & Recruiting",
+    personTitles: "CEO; President; CFO; Director of HR; HR Director; Benefits Coordinator; Benefits Manager",
   };
 }
 
@@ -39,7 +41,7 @@ export function SettingsForm({
   profiles: ApolloProfile[];
 }) {
   const [name, setName] = useState(workspaceName);
-  const [saved, setSaved] = useState<ApolloProfile[]>(profiles);
+  const [saved, setSaved] = useState<ApolloProfile[]>(profiles.map((item) => ({ ...blankProfile(), ...item, personTitles: item.personTitles || "" })));
   const [profileId, setProfileId] = useState(profiles[0]?.id || "");
   const current = saved.find((item) => item.id === profileId) || blankProfile();
   const [draft, setDraft] = useState<ApolloProfile>(current);
@@ -91,7 +93,7 @@ export function SettingsForm({
     const nextProfiles = saved.some((item) => item.id === next.id)
       ? saved.map((item) => (item.id === next.id ? next : item))
       : [next, ...saved];
-    const ok = await persist(nextProfiles, `Saved ${next.name}. It is available in Revenue Engine.`);
+    const ok = await persist(nextProfiles, `Saved ${next.name}. Find people will use its title list.`);
     if (ok) {
       setProfileId(next.id);
       setDraft(next);
@@ -134,8 +136,8 @@ export function SettingsForm({
           Delete profile
         </button>
       </div>
-      <label>Profile name<input value={draft.name} onChange={(e) => patch("name", e.target.value)} placeholder="BenefitsMe 1000+ warehouse" required /></label>
-      <label>Locations<input value={draft.locations} onChange={(e) => patch("locations", e.target.value)} placeholder="United States" /></label>
+      <label>Profile name<input value={draft.name} onChange={(e) => patch("name", e.target.value)} placeholder="Home Services Frisco" required /></label>
+      <label>Locations<input value={draft.locations} onChange={(e) => patch("locations", e.target.value)} placeholder="Frisco Texas" /></label>
       <label>Employee ranges<input value={draft.employeeRanges} onChange={(e) => patch("employeeRanges", e.target.value)} placeholder="1001,5000; 5001,10000; 10001+" /></label>
       <label>
         Industries to include
@@ -147,6 +149,11 @@ export function SettingsForm({
       </label>
       <label>Keywords to include<input value={draft.keywords} onChange={(e) => patch("keywords", e.target.value)} placeholder="warehouse, distribution, fulfillment" /></label>
       <label>Keywords to exclude<input value={draft.excludeKeywords} onChange={(e) => patch("excludeKeywords", e.target.value)} placeholder="staffing, recruiting, recruiter" /></label>
+      <label>
+        Titles to find
+        <textarea className="field" rows={3} value={draft.personTitles} onChange={(e) => patch("personTitles", e.target.value)} placeholder="CEO; President; Owner; Benefits Coordinator" />
+      </label>
+      <p className="meta">Separate titles with a semicolon. Find people uses this list only for companies saved from this search profile.</p>
       <label>Notes / qualified definition<textarea className="field" rows={4} value={draft.revenueTargets} onChange={(e) => patch("revenueTargets", e.target.value)} /></label>
       <button type="submit">Save search profile</button>
       {message ? <p>{message}</p> : null}
