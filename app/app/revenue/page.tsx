@@ -27,8 +27,8 @@ export default async function RevenuePage({
 
   return (
     <section className="main">
-      <p className="kicker">Revenue Engine</p>
-      <h2>Revenue Engine</h2>
+      <p className="kicker">Find Companies</p>
+      <h2>Find Companies</h2>
       <p className="meta">Pick a saved Apollo search, then find companies and save them as leads.</p>
       <LeadFinder workspaceId={workspace?.id || ""} profiles={profiles} />
       <RevenueBoard
