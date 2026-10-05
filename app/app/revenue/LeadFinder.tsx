@@ -14,6 +14,8 @@ type Lead = {
   source?: string;
 };
 
+export type SearchProfile = { id: string; name: string };
+
 function domainOf(url: string) {
   try {
     return url ? new URL(url.startsWith("http") ? url : `https://${url}`).hostname.replace(/^www\./, "") : null;
@@ -28,8 +30,9 @@ function websiteOf(url: string) {
   return trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
 }
 
-export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string; defaultQuery: string }) {
-  const [query, setQuery] = useState(defaultQuery);
+export function LeadFinder({ workspaceId, profiles }: { workspaceId: string; profiles: SearchProfile[] }) {
+  const [profileId, setProfileId] = useState(profiles[0]?.id || "");
+  const [query, setQuery] = useState("");
   const [items, setItems] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [page, setPage] = useState(1);
@@ -43,9 +46,13 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
   }
 
   async function findLeads(targetPage: number) {
+    if (!profileId) {
+      setMessage("Create a search profile in Settings first.");
+      return;
+    }
     setBusy(true);
     setMessage("");
-    const response = await fetch(`/api/revenue/leads?q=${encodeURIComponent(query)}&page=${targetPage}&t=${Date.now()}`);
+    const response = await fetch(`/api/revenue/leads?profile=${encodeURIComponent(profileId)}&q=${encodeURIComponent(query)}&page=${targetPage}&t=${Date.now()}`);
     const payload = await response.json().catch(() => ({}));
     setBusy(false);
     const nextItems: Lead[] = payload.items || [];
@@ -56,6 +63,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
     setNextPage(payload.nextPage || targetPage + 1);
     setMessage(
       [
+        payload.profileName ? `Profile: ${payload.profileName}` : "",
         payload.source ? `Source: ${payload.source}` : "",
         payload.page ? `Page ${payload.page}` : "",
         payload.fetched != null ? `fetched ${payload.fetched}` : "",
@@ -138,7 +146,7 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
   return (
     <div className="stack wide">
       <p className="meta">
-        Filters come from <Link href="/app/settings">Settings</Link>. Staffing and recruiting companies are saved to the Staffing list automatically.
+        Search profiles come from <Link href="/app/settings">Apollo Leads Settings</Link>. Staffing and recruiting companies are saved to the Staffing list automatically.
       </p>
       <form
         className="stack"
@@ -148,8 +156,19 @@ export function LeadFinder({ workspaceId, defaultQuery }: { workspaceId: string;
         }}
       >
         <label>
+          Search profile
+          <select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+            {!profiles.length ? <option value="">No search profiles yet</option> : null}
+            {profiles.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Extra keywords this search only
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Leave blank to use Settings keywords" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Leave blank to use the profile keywords" />
         </label>
         <button type="submit" disabled={busy}>
           {busy ? "Working..." : "Find companies (page 1)"}
