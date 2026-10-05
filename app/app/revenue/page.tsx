@@ -22,14 +22,15 @@ export default async function RevenuePage({
         supabase.from("integrations").select("metadata").eq("workspace_id", workspace.id).eq("provider", "workspace").maybeSingle(),
       ])
     : [{ data: [] }, { data: [] }, { data: null }];
-  const targets = ((settings?.metadata as { revenueTargets?: string } | null)?.revenueTargets || "").trim();
+  const metadata = (settings?.metadata || {}) as { apolloProfiles?: { id: string; name: string }[] };
+  const profiles = Array.isArray(metadata.apolloProfiles) ? metadata.apolloProfiles.map((item) => ({ id: item.id, name: item.name })) : [];
 
   return (
     <section className="main">
       <p className="kicker">Revenue Engine</p>
       <h2>Revenue Engine</h2>
-      <p className="meta">Find companies from your targets, save them as leads, then work the pipeline.</p>
-      <LeadFinder workspaceId={workspace?.id || ""} defaultQuery={targets} />
+      <p className="meta">Pick a saved Apollo search, then find companies and save them as leads.</p>
+      <LeadFinder workspaceId={workspace?.id || ""} profiles={profiles} />
       <RevenueBoard
         workspaceId={workspace?.id || ""}
         initialOpportunities={opportunities || []}
