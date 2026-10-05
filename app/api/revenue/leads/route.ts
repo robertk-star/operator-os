@@ -10,6 +10,8 @@ type Settings = {
   excludeKeywords?: string;
   excludeIndustries?: string;
   apolloCompanyPage?: number;
+  apolloProfiles?: Array<Settings & { id: string; name: string }>;
+  pageByProfile?: Record<string, number>;
 };
 
 const DEFAULT_1000_PLUS = ["1001,5000", "5001,10000", "10001+"];
@@ -60,6 +62,7 @@ function isStaffing(text: string, terms: string[]) {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const requested = url.searchParams.get("q")?.trim();
+  const profileId = url.searchParams.get("profile") || "";
   const requestedPage = Number(url.searchParams.get("page") || "0");
   const supabase = await createSupabaseServerClient();
   const workspace = await getCurrentWorkspace();
@@ -70,19 +73,22 @@ export async function GET(request: Request) {
     supabase.from("organizations").select("name, domain, apollo_organization_id").eq("workspace_id", workspace.id),
   ]);
   const settings = (settingsRow?.metadata || {}) as Settings;
-  const page = requestedPage > 0 ? Math.min(requestedPage, 500) : Number(settings.apolloCompanyPage || 1);
+  const profile = (settings.apolloProfiles || []).find((item) => item.id === profileId) || settings.apolloProfiles?.[0];
+  const active = profile || settings;
+  const pageByProfile = settings.pageByProfile || {};
+  const page = requestedPage > 0 ? Math.min(requestedPage, 500) : Number((profile ? pageByProfile[profile.id] : settings.apolloCompanyPage) || 1);
   const savedNames = new Set((savedOrgs || []).map((org) => (org.name || "").trim().toLowerCase()));
   const savedDomains = new Set((savedOrgs || []).map((org) => (org.domain || "").replace(/^www\./, "").toLowerCase()).filter(Boolean));
   const savedApollo = new Set((savedOrgs || []).map((org) => org.apollo_organization_id).filter(Boolean));
 
-  const locations = splitList(settings.locations);
-  const ranges = normalizeEmployeeRanges(settings.employeeRanges);
-  const industries = splitList(settings.industries).filter((item) => !/staffing|recruit/i.test(item));
-  const keywords = splitList(requested || settings.keywords).filter((item) => !/staffing|recruit/i.test(item));
-  const staffingTerms = [...splitList(settings.excludeKeywords), ...splitList(settings.excludeIndustries)];
+  const locations = splitList(active.locations);
+  const ranges = normalizeEmployeeRanges(active.employeeRanges);
+  const industries = splitList(active.industries).filter((item) => !/staffing|recruit/i.test(item));
+  const keywords = splitList(requested || active.keywords).filter((item) => !/staffing|recruit/i.test(item));
+  const staffingTerms = [...splitList(active.excludeKeywords), ...splitList(active.excludeIndustries)];
   const terms = staffingTerms.length ? staffingTerms : DEFAULT_STAFFING;
   const tags = [...industries, ...keywords];
-  const filters = { locations, employeeRanges: ranges, industries, keywords, staffingTerms: terms, page };
+  const filters = { profile: profile?.name || "", locations, employeeRanges: ranges, industries, keywords, staffingTerms: terms, page };
 
   const key = process.env.APOLLO_API_KEY;
   if (!key) return NextResponse.json({ source: "none", items: [], error: "APOLLO_API_KEY missing.", filters });
@@ -109,6 +115,7 @@ export async function GET(request: Request) {
       items: [],
       error: payload.error || payload.message || JSON.stringify(payload),
       filters,
+      profileName: profile?.name || "",
     });
   }
 
@@ -183,7 +190,11 @@ export async function GET(request: Request) {
       workspace_id: workspace.id,
       provider: "workspace",
       status: "connected",
-      metadata: { ...settings, apolloCompanyPage: page },
+      metadata: {
+        ...settings,
+        apolloCompanyPage: page,
+        pageByProfile: profile ? { ...pageByProfile, [profile.id]: page } : pageByProfile,
+      },
     },
     { onConflict: "workspace_id,provider" }
   );
@@ -194,6 +205,7 @@ export async function GET(request: Request) {
     items,
     error: "",
     filters,
+    profileName: profile?.name || "",
     skipped,
     filed,
     fetched: organizations.length,
