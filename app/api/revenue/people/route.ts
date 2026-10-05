@@ -19,6 +19,13 @@ function clean(value: unknown) {
   return text;
 }
 
+function splitTitles(value: string | undefined) {
+  return String(value || "")
+    .split(/[;,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function namesOf(person: any) {
   const first = clean(person.first_name);
   const last = clean(person.last_name);
@@ -39,7 +46,7 @@ export async function GET(request: Request) {
   const contactId = url.searchParams.get("contactId") || "";
   const { data: company } = await supabase
     .from("contacts")
-    .select("id, reviewed, website, business_name, full_name, organization_id, organizations(domain, apollo_organization_id, name)")
+    .select("id, reviewed, website, business_name, full_name, source, organization_id, organizations(domain, apollo_organization_id, name)")
     .eq("workspace_id", workspace.id)
     .eq("id", contactId)
     .maybeSingle();
@@ -47,18 +54,18 @@ export async function GET(request: Request) {
   if (!company.reviewed) return NextResponse.json({ error: "Review this company before finding people." }, { status: 400 });
 
   const { data: settingsRow } = await supabase.from("integrations").select("metadata").eq("workspace_id", workspace.id).eq("provider", "workspace").maybeSingle();
-  const titles = String((settingsRow?.metadata as { personTitles?: string } | null)?.personTitles || "")
-    .split(/[;,\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const personTitles = titles.length ? titles : DEFAULT_TITLES;
+  const profiles = ((settingsRow?.metadata as { apolloProfiles?: Array<{ name?: string; personTitles?: string }> } | null)?.apolloProfiles || []);
+  const source = String(company.source || "").trim().toLowerCase();
+  const profile = profiles.find((item) => String(item.name || "").trim().toLowerCase() === source);
+  const personTitles = splitTitles(profile?.personTitles);
+  const titles = personTitles.length ? personTitles : DEFAULT_TITLES;
 
   const org = Array.isArray(company.organizations) ? company.organizations[0] : company.organizations;
   const domain = domainOf(company.website || org?.domain || "");
   const key = process.env.APOLLO_API_KEY;
   if (!key) return NextResponse.json({ error: "APOLLO_API_KEY missing." }, { status: 400 });
 
-  const body: Record<string, unknown> = { page: 1, per_page: 25, person_titles: personTitles };
+  const body: Record<string, unknown> = { page: 1, per_page: 25, person_titles: titles };
   if (org?.apollo_organization_id) body.organization_ids = [org.apollo_organization_id];
   if (domain) body.q_organization_domains_list = [domain];
 
@@ -95,7 +102,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     company: company.business_name || company.full_name,
     domain,
-    titles: personTitles,
+    profile: profile?.name || company.source || "",
+    titles,
     items,
     fetched: items.length,
   });
