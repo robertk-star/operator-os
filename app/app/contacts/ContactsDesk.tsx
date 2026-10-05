@@ -59,17 +59,22 @@ function host(value?: string | null) {
 function headcount(contact: Contact) {
   return (contact.tags || []).find((tag) => /employee/i.test(tag)) || "";
 }
+function sourceName(contact: Contact) {
+  return (contact.source || "").trim() || "No search source";
+}
 
 export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: string; initialContacts: Contact[] }) {
   const [contacts, setContacts] = useState(initialContacts);
   const [query, setQuery] = useState("");
   const [summary, setSummary] = useState<"active" | "archived" | "suppressed" | "missingEmail" | "staffing">("active");
   const [reviewFilter, setReviewFilter] = useState<"all" | "reviewed" | "open">("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState(initialContacts[0]?.id || "");
   const [message, setMessage] = useState("");
 
   const selected = contacts.find((item) => item.id === selectedId) || null;
+  const sources = useMemo(() => Array.from(new Set(contacts.map(sourceName))).sort(), [contacts]);
 
   const counts = useMemo(() => {
     return {
@@ -91,10 +96,11 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
       if (summary === "missingEmail" && item.email) return false;
       if (reviewFilter === "reviewed" && !item.reviewed) return false;
       if (reviewFilter === "open" && item.reviewed) return false;
+      if (sourceFilter !== "all" && sourceName(item) !== sourceFilter) return false;
       if (!term) return true;
-      return [displayName(item), orgName(item), item.email, item.website, item.industry, headcount(item)].join(" ").toLowerCase().includes(term);
-    });
-  }, [contacts, query, summary, reviewFilter]);
+      return [displayName(item), orgName(item), item.email, item.website, item.industry, item.source, headcount(item)].join(" ").toLowerCase().includes(term);
+    }).sort((a, b) => sourceName(a).localeCompare(sourceName(b)) || displayName(a).localeCompare(displayName(b)));
+  }, [contacts, query, summary, reviewFilter, sourceFilter]);
 
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -158,8 +164,8 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
   }
 
   function exportCsv() {
-    const header = ["Name", "Email", "Phone", "Company", "Title", "Industry", "Website", "Headcount", "Reviewed"];
-    const rows = filtered.map((item) => [displayName(item), item.email || "", item.phone || "", orgName(item), item.job_title || "", item.industry || "", item.website || "", headcount(item), item.reviewed ? "yes" : "no"]);
+    const header = ["Name", "Email", "Phone", "Company", "Title", "Industry", "Website", "Headcount", "Source", "Reviewed"];
+    const rows = filtered.map((item) => [displayName(item), item.email || "", item.phone || "", orgName(item), item.job_title || "", item.industry || "", item.website || "", headcount(item), sourceName(item), item.reviewed ? "yes" : "no"]);
     const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -169,6 +175,8 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
     link.click();
     URL.revokeObjectURL(url);
   }
+
+  let lastSource = "";
 
   return (
     <div className="contacts-desk">
@@ -204,6 +212,13 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
       <div className="contacts-split">
         <aside className="contacts-list">
           <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search company..." />
+          <label>
+            Search source
+            <select value={sourceFilter} onChange={(e) => { setSourceFilter(e.target.value); setPage(1); }}>
+              <option value="all">All searches</option>
+              {sources.map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
           <div className="row">
             <button type="button" className={reviewFilter === "all" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("all"); setPage(1); }}>All</button>
             <button type="button" className={reviewFilter === "open" ? "kpi-dark chip" : "chip"} onClick={() => { setReviewFilter("open"); setPage(1); }}>Not reviewed</button>
@@ -215,14 +230,20 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
             const company = orgName(item);
             const site = host(item.website);
             const count = headcount(item);
+            const group = sourceName(item);
+            const showGroup = group !== lastSource;
+            lastSource = group;
             return (
-              <button key={item.id} type="button" className={item.id === selectedId ? "contact-row selected" : "contact-row"} onClick={() => setSelectedId(item.id)}>
-                <strong>{name}</strong>
-                {company && company.toLowerCase() !== name.toLowerCase() ? <span>{company}</span> : null}
-                {site ? <small>{site}</small> : null}
-                {count ? <em>{count}</em> : null}
-                {item.reviewed ? <em>REVIEWED</em> : null}
-              </button>
+              <div key={item.id}>
+                {showGroup ? <p className="kicker">{group}</p> : null}
+                <button type="button" className={item.id === selectedId ? "contact-row selected" : "contact-row"} onClick={() => setSelectedId(item.id)}>
+                  <strong>{name}</strong>
+                  {company && company.toLowerCase() !== name.toLowerCase() ? <span>{company}</span> : null}
+                  {site ? <small>{site}</small> : null}
+                  {count ? <em>{count}</em> : null}
+                  {item.reviewed ? <em>REVIEWED</em> : null}
+                </button>
+              </div>
             );
           })}
           <div className="row">
@@ -236,6 +257,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
             <>
               <p className="kicker">Company lead</p>
               <h3>{displayName(selected)}</h3>
+              <p className="meta">Search source: {sourceName(selected)}</p>
               {selected.website ? (
                 <p>
                   <a href={selected.website.startsWith("http") ? selected.website : `https://${selected.website}`} target="_blank" rel="noreferrer">{selected.website}</a>
