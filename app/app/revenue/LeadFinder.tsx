@@ -40,6 +40,7 @@ export function LeadFinder({ workspaceId, profiles }: { workspaceId: string; pro
   const [source, setSource] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const profileName = profiles.find((item) => item.id === profileId)?.name || "";
 
   function keyFor(lead: Lead) {
     return `${lead.id || lead.name}-${lead.url}`;
@@ -98,15 +99,17 @@ export function LeadFinder({ workspaceId, profiles }: { workspaceId: string; pro
       full_name: lead.name,
       business_name: lead.name,
       website,
-      source: "apollo",
+      source: profileName || "apollo",
+      tags: profileName ? [profileName] : [],
       email_status: "missing",
       status: "active",
+      record_type: "company",
     };
     let { data: contact, error: contactError } = await supabase.from("contacts").insert(contactRow).select("id").single();
     if (contactError) {
       const retry = await supabase
         .from("contacts")
-        .insert({ workspace_id: workspaceId, organization_id: organization.id, full_name: lead.name, email: null })
+        .insert({ workspace_id: workspaceId, organization_id: organization.id, full_name: lead.name, source: profileName || "apollo", email: null })
         .select("id")
         .single();
       contact = retry.data;
@@ -138,7 +141,7 @@ export function LeadFinder({ workspaceId, profiles }: { workspaceId: string; pro
     setBusy(false);
     const savedKeys = new Set(leads.map(keyFor));
     setItems((current) => current.filter((item) => !savedKeys.has(keyFor(item)) || failed.some((text) => text.includes(item.name))));
-    setMessage(failed.length ? `Saved ${saved}. ${failed[0]}` : `Saved ${saved} companies.`);
+    setMessage(failed.length ? `Saved ${saved}. ${failed[0]}` : `Saved ${saved} companies from ${profileName || "this search"}.`);
   }
 
   const chosen = items.filter((item) => selected[keyFor(item)]);
@@ -146,7 +149,7 @@ export function LeadFinder({ workspaceId, profiles }: { workspaceId: string; pro
   return (
     <div className="stack wide">
       <p className="meta">
-        Search profiles come from <Link href="/app/settings">Apollo Leads Settings</Link>. Staffing and recruiting companies are saved to the Staffing list automatically.
+        Search profiles come from <Link href="/app/settings">Apollo Leads Settings</Link>. Saved companies keep the profile name on Company leads.
       </p>
       <form
         className="stack"
@@ -200,7 +203,7 @@ export function LeadFinder({ workspaceId, profiles }: { workspaceId: string; pro
                 onChange={(event) => setSelected((current) => ({ ...current, [keyFor(item)]: event.target.checked }))}
               />
               <strong>{item.name}</strong>
-              <div className="meta">{[item.source || source, item.location, item.url].filter(Boolean).join(" · ")}</div>
+              <div className="meta">{[profileName, item.source || source, item.location, item.url].filter(Boolean).join(" · ")}</div>
               <p>{item.snippet}</p>
             </label>
           </li>
