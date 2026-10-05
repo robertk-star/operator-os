@@ -56,6 +56,9 @@ function host(value?: string | null) {
     return value;
   }
 }
+function headcount(contact: Contact) {
+  return (contact.tags || []).find((tag) => /employee/i.test(tag)) || "";
+}
 
 export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: string; initialContacts: Contact[] }) {
   const [contacts, setContacts] = useState(initialContacts);
@@ -89,7 +92,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
       if (reviewFilter === "reviewed" && !item.reviewed) return false;
       if (reviewFilter === "open" && item.reviewed) return false;
       if (!term) return true;
-      return [displayName(item), orgName(item), item.email, item.website, item.industry].join(" ").toLowerCase().includes(term);
+      return [displayName(item), orgName(item), item.email, item.website, item.industry, headcount(item)].join(" ").toLowerCase().includes(term);
     });
   }, [contacts, query, summary, reviewFilter]);
 
@@ -155,8 +158,8 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
   }
 
   function exportCsv() {
-    const header = ["Name", "Email", "Phone", "Company", "Title", "Industry", "Website", "Reviewed"];
-    const rows = filtered.map((item) => [displayName(item), item.email || "", item.phone || "", orgName(item), item.job_title || "", item.industry || "", item.website || "", item.reviewed ? "yes" : "no"]);
+    const header = ["Name", "Email", "Phone", "Company", "Title", "Industry", "Website", "Headcount", "Reviewed"];
+    const rows = filtered.map((item) => [displayName(item), item.email || "", item.phone || "", orgName(item), item.job_title || "", item.industry || "", item.website || "", headcount(item), item.reviewed ? "yes" : "no"]);
     const csv = [header, ...rows].map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -211,11 +214,13 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
             const name = displayName(item);
             const company = orgName(item);
             const site = host(item.website);
+            const count = headcount(item);
             return (
               <button key={item.id} type="button" className={item.id === selectedId ? "contact-row selected" : "contact-row"} onClick={() => setSelectedId(item.id)}>
                 <strong>{name}</strong>
                 {company && company.toLowerCase() !== name.toLowerCase() ? <span>{company}</span> : null}
                 {site ? <small>{site}</small> : null}
+                {count ? <em>{count}</em> : null}
                 {item.reviewed ? <em>REVIEWED</em> : null}
               </button>
             );
@@ -264,6 +269,7 @@ export function ContactsDesk({ workspaceId, initialContacts }: { workspaceId: st
                 <label>Business name<input value={selected.business_name || orgName(selected)} onChange={(e) => save({ business_name: e.target.value })} /></label>
                 <label>Industry<input value={selected.industry || ""} onChange={(e) => save({ industry: e.target.value })} /></label>
                 <label>Website<input value={selected.website || ""} onChange={(e) => save({ website: e.target.value })} /></label>
+                <label>Headcount<input value={headcount(selected) || "Not returned by Apollo"} readOnly /></label>
                 <label>Source<input value={selected.source || ""} onChange={(e) => save({ source: e.target.value })} /></label>
               </div>
               <div className="form-grid">
