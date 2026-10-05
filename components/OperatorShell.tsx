@@ -14,7 +14,7 @@ const NAV = [
   ["Company leads", "/app/contacts"],
   ["Contacts", "/app/people"],
   ["Relationships", "/app/relationships"],
-  ["Revenue Engine", "/app/revenue"],
+  ["Find Companies", "/app/revenue"],
   ["Outbound sequences", "/app/outbound"],
   ["Tools", "/app/tools"],
   ["Procedures", "/app/procedures"],
