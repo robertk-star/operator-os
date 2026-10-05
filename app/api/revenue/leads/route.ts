@@ -73,18 +73,17 @@ export async function GET(request: Request) {
   const workspace = await getCurrentWorkspace();
   if (!workspace) return NextResponse.json({ query: "", items: [] }, { status: 401 });
 
-  const [{ data: settingsRow }, { data: savedOrgs }] = await Promise.all([
+  const [{ data: settingsRow }, { data: savedLeads }] = await Promise.all([
     supabase.from("integrations").select("metadata").eq("workspace_id", workspace.id).eq("provider", "workspace").maybeSingle(),
-    supabase.from("organizations").select("name, domain, apollo_organization_id").eq("workspace_id", workspace.id),
+    supabase.from("contacts").select("full_name, business_name, website").eq("workspace_id", workspace.id).eq("record_type", "company"),
   ]);
   const settings = (settingsRow?.metadata || {}) as Settings;
   const profile = (settings.apolloProfiles || []).find((item) => item.id === profileId) || settings.apolloProfiles?.[0];
   const active = profile || settings;
   const pageByProfile = settings.pageByProfile || {};
-  const page = requestedPage > 0 ? Math.min(requestedPage, 500) : Number((profile ? pageByProfile[profile.id] : settings.apolloCompanyPage) || 1);
-  const savedNames = new Set((savedOrgs || []).map((org) => (org.name || "").trim().toLowerCase()));
-  const savedDomains = new Set((savedOrgs || []).map((org) => (org.domain || "").replace(/^www\./, "").toLowerCase()).filter(Boolean));
-  const savedApollo = new Set((savedOrgs || []).map((org) => org.apollo_organization_id).filter(Boolean));
+  const page = requestedPage > 0 ? Math.min(requestedPage, 500) : 1;
+  const savedNames = new Set((savedLeads || []).flatMap((lead) => [lead.full_name, lead.business_name].map((value) => (value || "").trim().toLowerCase())).filter(Boolean));
+  const savedDomains = new Set((savedLeads || []).map((lead) => domainOf(lead.website || "")).filter(Boolean));
 
   const locations = splitList(active.locations);
   const ranges = normalizeEmployeeRanges(active.employeeRanges);
@@ -140,8 +139,7 @@ export async function GET(request: Request) {
     };
   });
 
-  const fresh = mapped.filter((item: { id: string; name: string; domain: string }) => {
-    if (item.id && savedApollo.has(item.id)) return false;
+  const fresh = mapped.filter((item: { name: string; domain: string }) => {
     if (savedNames.has(item.name.trim().toLowerCase())) return false;
     if (item.domain && savedDomains.has(item.domain)) return false;
     return true;
